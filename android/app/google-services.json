@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "118362286247",
+    "project_id": "taskman-dev-shoyo-53266",
+    "storage_bucket": "taskman-dev-shoyo-53266.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:118362286247:android:930f86fbe9fcdce21b9382",
+        "android_client_info": {
+          "package_name": "com.example.taskman"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCasl6mU5b-evqe2v-apTYBdcjBfGvt4Zs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
