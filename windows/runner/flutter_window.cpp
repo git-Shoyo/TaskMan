@@ -144,6 +144,21 @@ bool FlutterWindow::OnCreate() {
           return;
         }
 
+        if (call.method_name() == "setNativeGanttVisible") {
+          const auto* arguments = call.arguments();
+          if (arguments != nullptr) {
+            if (const auto* visible = std::get_if<bool>(arguments)) {
+              if (*visible) {
+                ShowNativeGanttWindow();
+              } else {
+                HideNativeGanttWindow();
+              }
+            }
+          }
+          result->Success();
+          return;
+        }
+
         if (call.method_name() == "getNativeGanttPosition") {
           result->Success(flutter::EncodableValue(GetNativeGanttPosition()));
           return;

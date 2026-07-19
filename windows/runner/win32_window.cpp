@@ -291,7 +291,9 @@ bool Win32Window::Show() {
     ShowDesktopWidgetWindow(window_handle_);
   }
 
-  native_gantt_window_.Show();
+  if (native_gantt_visible_) {
+    native_gantt_window_.Show();
+  }
 
   return did_show;
 }
@@ -302,15 +304,19 @@ void Win32Window::ShowAsDebugDesktopWidget() {
   }
 
   native_gantt_window_.SetPlacementMode(false);
-  native_gantt_window_.Show();
+  if (native_gantt_visible_) {
+    native_gantt_window_.Show();
+  }
   ShowWindow(window_handle_, SW_HIDE);
 }
 
 void Win32Window::ShowNativeGanttWindow() {
+  native_gantt_visible_ = true;
   native_gantt_window_.Show();
 }
 
 void Win32Window::HideNativeGanttWindow() {
+  native_gantt_visible_ = false;
   native_gantt_window_.Hide();
 }
 
@@ -346,7 +352,9 @@ void Win32Window::ShowAsMainWindow() {
   RECT work_area;
   if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &work_area, 0)) {
     ShowWindow(window_handle_, SW_SHOWNORMAL);
-    native_gantt_window_.Show();
+    if (native_gantt_visible_) {
+      native_gantt_window_.Show();
+    }
     return;
   }
 
@@ -363,7 +371,9 @@ void Win32Window::ShowAsMainWindow() {
   BringWindowToTop(window_handle_);
   SetForegroundWindow(window_handle_);
   UpdateWindow(window_handle_);
-  native_gantt_window_.Show();
+  if (native_gantt_visible_) {
+    native_gantt_window_.Show();
+  }
 }
 
 // static
@@ -399,7 +409,9 @@ Win32Window::MessageHandler(HWND hwnd,
   switch (message) {
     case WM_CLOSE:
       if (desktop_widget_mode_) {
-        native_gantt_window_.Show();
+        if (native_gantt_visible_) {
+          native_gantt_window_.Show();
+        }
         ShowWindow(hwnd, SW_HIDE);
         return 0;
       }
@@ -408,11 +420,15 @@ Win32Window::MessageHandler(HWND hwnd,
     case kTrayWindowMessage:
       if (desktop_widget_mode_) {
         if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
-          native_gantt_window_.Show();
+          if (native_gantt_visible_) {
+            native_gantt_window_.Show();
+          }
         } else if (lparam == WM_RBUTTONUP) {
           const UINT command = ShowTrayMenu(hwnd);
           if (command == kTrayMenuShow) {
-            native_gantt_window_.Show();
+            if (native_gantt_visible_) {
+              native_gantt_window_.Show();
+            }
           } else if (command == kTrayMenuMainWindow) {
             SetDesktopWidgetMode(false);
             OnMainWindowRequested();

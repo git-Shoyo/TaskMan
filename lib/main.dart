@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'layouts/responsive_layout.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/auth/email_verification_screen.dart';
+import 'screens/auth/get_started_screen.dart';
 import 'screens/desktop_gantt_widget_screen.dart';
 import 'screens/task_detail_screen.dart';
 import 'services/task_notification_service.dart';
@@ -200,7 +201,7 @@ class _TaskManState extends State<TaskMan> {
   }
 }
 
-class _MainWindowAuthGate extends StatelessWidget {
+class _MainWindowAuthGate extends StatefulWidget {
   const _MainWindowAuthGate({
     required this.authController,
     required this.child,
@@ -210,25 +211,50 @@ class _MainWindowAuthGate extends StatelessWidget {
   final Widget child;
 
   @override
+  State<_MainWindowAuthGate> createState() => _MainWindowAuthGateState();
+}
+
+class _MainWindowAuthGateState extends State<_MainWindowAuthGate> {
+  bool _showAuthScreen = false;
+
+  void _openAuthScreen() {
+    setState(() {
+      _showAuthScreen = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: authController,
+      animation: widget.authController,
       builder: (context, _) {
-        if (!authController.isReady || authController.isLoadingProfile) {
+        if (!widget.authController.isReady ||
+            widget.authController.isLoadingProfile) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        if (!authController.isSignedIn) {
-          return const AuthScreen();
+        if (!widget.authController.isSignedIn) {
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            child: _showAuthScreen
+                ? const AuthScreen(key: ValueKey('auth-screen'))
+                : GetStartedScreen(
+                    key: const ValueKey('get-started-screen'),
+                    onGetStarted: _openAuthScreen,
+                    onSignIn: _openAuthScreen,
+                  ),
+          );
         }
 
-        if (authController.needsEmailVerification) {
+        if (widget.authController.needsEmailVerification) {
           return const EmailVerificationScreen();
         }
 
-        return child;
+        return widget.child;
       },
     );
   }

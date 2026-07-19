@@ -72,6 +72,7 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
 
   @override
   void dispose() {
+    unawaited(_setNativeGanttVisible(false));
     unawaited(_projectsSubscription?.cancel());
     unawaited(_tasksSubscription?.cancel());
     super.dispose();
@@ -83,6 +84,8 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
         auth != null && auth.isSignedIn && !auth.needsEmailVerification
         ? auth.currentUser.id
         : null;
+
+    unawaited(_setNativeGanttVisible(nextMemberId != null));
 
     if (_memberId == nextMemberId) {
       return;
@@ -129,6 +132,16 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
         .listen((tasks) {
           unawaited(_sendTasks(tasks));
         }, onError: (_) => unawaited(_sendTasks(const <Task>[])));
+  }
+
+  Future<void> _setNativeGanttVisible(bool visible) async {
+    try {
+      await _windowChannel.invokeMethod<void>('setNativeGanttVisible', visible);
+    } on MissingPluginException {
+      // The native gantt is optional on unsupported platforms and in tests.
+    } on PlatformException {
+      // Visibility failures must not interrupt the main application.
+    }
   }
 
   Future<void> _sendTasks(List<Task> tasks) async {

@@ -132,6 +132,7 @@ class Win32Window {
 
   bool quit_on_close_ = false;
   bool desktop_widget_mode_ = false;
+  bool native_gantt_visible_ = false;
   NativeGanttWindow native_gantt_window_;
 
   // window handle for top level window.

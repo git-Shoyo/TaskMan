@@ -34,15 +34,13 @@ class _GetStartedScreenState extends State<GetStartedScreen>
       curve: Curves.easeOut,
     );
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.04),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutCubic,
-      ),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _animationController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
 
     _animationController.forward();
   }
@@ -78,8 +76,7 @@ class _GetStartedScreenState extends State<GetStartedScreen>
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight -
-                              (isWide ? 72 : 48),
+                          minHeight: constraints.maxHeight - (isWide ? 72 : 48),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -144,10 +141,7 @@ class _BrandHeader extends StatelessWidget {
           height: 42,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                colorScheme.primary,
-                colorScheme.tertiary,
-              ],
+              colors: [colorScheme.primary, colorScheme.tertiary],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -180,10 +174,7 @@ class _BrandHeader extends StatelessWidget {
 }
 
 class _HeroContent extends StatelessWidget {
-  const _HeroContent({
-    required this.onGetStarted,
-    required this.onSignIn,
-  });
+  const _HeroContent({required this.onGetStarted, required this.onSignIn});
 
   final VoidCallback onGetStarted;
   final VoidCallback onSignIn;
@@ -242,14 +233,8 @@ class _HeroContent extends StatelessWidget {
               icon: Icons.check_circle_outline_rounded,
               label: '課題・タスク',
             ),
-            _FeatureChip(
-              icon: Icons.account_tree_outlined,
-              label: 'プロジェクト',
-            ),
-            _FeatureChip(
-              icon: Icons.timeline_rounded,
-              label: '予定の見える化',
-            ),
+            _FeatureChip(icon: Icons.account_tree_outlined, label: 'プロジェクト'),
+            _FeatureChip(icon: Icons.timeline_rounded, label: '予定の見える化'),
           ],
         ),
         const SizedBox(height: 36),
@@ -313,10 +298,7 @@ class _HeroContent extends StatelessWidget {
 }
 
 class _FeatureChip extends StatelessWidget {
-  const _FeatureChip({
-    required this.icon,
-    required this.label,
-  });
+  const _FeatureChip({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -448,8 +430,9 @@ class _TaskPreview extends StatelessWidget {
                           value: 0.72,
                           strokeWidth: 7,
                           strokeCap: StrokeCap.round,
-                          backgroundColor: colorScheme.surface
-                              .withValues(alpha: 0.56),
+                          backgroundColor: colorScheme.surface.withValues(
+                            alpha: 0.56,
+                          ),
                         ),
                         Text(
                           '72%',
@@ -573,8 +556,7 @@ class _PreviewTaskTile extends StatelessWidget {
                   title,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    decoration:
-                        completed ? TextDecoration.lineThrough : null,
+                    decoration: completed ? TextDecoration.lineThrough : null,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -654,10 +636,7 @@ class _BackgroundDecoration extends StatelessWidget {
 }
 
 class _BlurCircle extends StatelessWidget {
-  const _BlurCircle({
-    required this.size,
-    required this.color,
-  });
+  const _BlurCircle({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -667,10 +646,7 @@ class _BlurCircle extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
