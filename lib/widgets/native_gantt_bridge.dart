@@ -34,7 +34,9 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
   List<String> _projectIds = const [];
 
   bool get _isSupportedPlatform =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.android);
 
   @override
   void initState() {
@@ -137,8 +139,8 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
         payload,
       );
     } on MissingPluginException {
-      // The bridge is Windows-only, but keeping this quiet makes tests and
-      // unsupported desktop runs harmless.
+      // The native gantt is optional, so unsupported platforms and tests should
+      // never disturb the main app.
     } on PlatformException {
       // Native gantt is an auxiliary surface; the main app should keep running.
     }
@@ -169,6 +171,11 @@ List<Map<String, Object?>> _nativeGanttPayload(List<Task> tasks) {
           : assigneeName,
       'startOffset': _dayOffset(range.start, taskRange.start).clamp(0, 6),
       'endOffset': _dayOffset(range.start, taskRange.end).clamp(0, 6),
+      'startEpochDay': _epochDay(taskRange.start),
+      'endEpochDay': _epochDay(taskRange.end),
+      'deadlineEpochDay': task.deadline == null
+          ? null
+          : _epochDay(task.deadline!),
       'completionPercent': task.completionPercent,
       'priority': task.priority ?? 0,
       'isDone': task.isDone,
@@ -231,6 +238,11 @@ _GanttRange? _taskRange(Task task) {
 
 int _dayOffset(DateTime start, DateTime date) {
   return DateUtils.dateOnly(date).difference(DateUtils.dateOnly(start)).inDays;
+}
+
+int _epochDay(DateTime date) {
+  final day = DateUtils.dateOnly(date);
+  return day.difference(DateTime(1970)).inDays;
 }
 
 bool _isOverdue(Task task) {

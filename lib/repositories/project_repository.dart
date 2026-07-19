@@ -37,19 +37,40 @@ class ProjectRepository {
     ).doc(Uri.encodeComponent(Project.normalizeNameKey(name)));
   }
 
-  Stream<List<Project>> watchProjects({String? memberId}) {
+  Stream<List<Project>> watchProjects({
+    String? memberId,
+    String? organizationId,
+  }) {
     Query<Map<String, dynamic>> query = _projects;
     final normalizedMemberId = memberId?.trim();
+    final normalizedOrganizationId = organizationId?.trim();
 
     if (normalizedMemberId != null && normalizedMemberId.isNotEmpty) {
       query = query.where('memberIds', arrayContains: normalizedMemberId);
+    } else if (normalizedOrganizationId != null &&
+        normalizedOrganizationId.isNotEmpty) {
+      query = query.where(
+        'organizationId',
+        isEqualTo: normalizedOrganizationId,
+      );
     }
 
     return query.snapshots().map((snapshot) {
-      final projects = snapshot.docs
-          .map(Project.fromFirestore)
-          .where((project) => !project.isArchived)
-          .toList();
+      final projects = snapshot.docs.map(Project.fromFirestore).where((
+        project,
+      ) {
+        if (project.isArchived) {
+          return false;
+        }
+
+        if (normalizedOrganizationId != null &&
+            normalizedOrganizationId.isNotEmpty &&
+            project.organizationId != normalizedOrganizationId) {
+          return false;
+        }
+
+        return true;
+      }).toList();
 
       projects.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return projects;
@@ -59,6 +80,7 @@ class ProjectRepository {
   Future<void> addProject({
     required String name,
     String? description,
+    String? organizationId,
     String ownerId = 'local-user',
     List<String> memberIds = const [],
     Map<String, String> memberRoles = const {},
@@ -98,6 +120,9 @@ class ProjectRepository {
       name: trimmedName,
       description: description,
       ownerId: ownerId,
+      organizationId: organizationId?.trim().isEmpty ?? true
+          ? null
+          : organizationId!.trim(),
       memberIds: normalizedMemberIds,
       memberRoles: normalizedMemberRoles,
       createdAt: now,

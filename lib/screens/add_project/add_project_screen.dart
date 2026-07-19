@@ -4,10 +4,13 @@ import 'package:taskman/repositories/project_repository.dart';
 import 'package:taskman/repositories/user_repository.dart';
 import 'package:taskman/systems/auth_scope.dart';
 import 'package:taskman/systems/app_user.dart';
+import 'package:taskman/systems/organization.dart';
 
 // stateありウィジット
 class AddProjectScreen extends StatefulWidget {
-  const AddProjectScreen({super.key});
+  const AddProjectScreen({super.key, this.organization});
+
+  final Organization? organization;
 
   @override
   State<AddProjectScreen> createState() => _AddProjectScreenState();
@@ -51,8 +54,11 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
       await projectRepository.addProject(
         name: projectName,
         description: projectDetail.isEmpty ? null : projectDetail,
+        organizationId: widget.organization?.id,
         ownerId: currentUser.id,
-        memberIds: selectedMembers.map((user) => user.id).toList(),
+        memberIds:
+            widget.organization?.memberIds ??
+            selectedMembers.map((user) => user.id).toList(),
       );
 
       if (!mounted) {
@@ -348,25 +354,30 @@ class _AddProjectScreenState extends State<AddProjectScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    _MemberPickerSection(
-                      selectedMembers: selectedMembers,
-                      searchResults: userSearchResults,
-                      searchMessage: userSearchMessage,
-                      searchField: userSearchField,
-                      searchController: userSearchController,
-                      isSearching: isSearchingUsers,
-                      onSearchFieldChanged: (field) {
-                        setState(() {
-                          userSearchField = field;
-                          userSearchMessage = null;
-                          userSearchResults = [];
-                        });
-                      },
-                      onSearch: () => searchUsers(),
-                      onQrSearch: openQrSearchDialog,
-                      onAddMember: addMember,
-                      onRemoveMember: removeMember,
-                    ),
+                    if (widget.organization == null)
+                      _MemberPickerSection(
+                        selectedMembers: selectedMembers,
+                        searchResults: userSearchResults,
+                        searchMessage: userSearchMessage,
+                        searchField: userSearchField,
+                        searchController: userSearchController,
+                        isSearching: isSearchingUsers,
+                        onSearchFieldChanged: (field) {
+                          setState(() {
+                            userSearchField = field;
+                            userSearchMessage = null;
+                            userSearchResults = [];
+                          });
+                        },
+                        onSearch: () => searchUsers(),
+                        onQrSearch: openQrSearchDialog,
+                        onAddMember: addMember,
+                        onRemoveMember: removeMember,
+                      )
+                    else
+                      _OrganizationProjectScope(
+                        organization: widget.organization!,
+                      ),
                   ],
                 ),
               ),
@@ -386,6 +397,54 @@ String _projectSaveErrorMessage(FirebaseException error) {
       return 'Firebase に接続できませんでした。ネットワークを確認してください';
     default:
       return 'プロジェクトの保存に失敗しました (${error.plugin}/${error.code})';
+  }
+}
+
+class _OrganizationProjectScope extends StatelessWidget {
+  const _OrganizationProjectScope({required this.organization});
+
+  final Organization organization;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1000),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colorScheme.outlineVariant),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.apartment),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    organization.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'このプロジェクトは組織配下に作成され、${organization.memberIds.length}人の組織メンバーが参加します。',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

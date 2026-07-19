@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/home_screen.dart';
+import '../screens/organization_screen.dart';
 import '../screens/project_screen.dart';
 import '../screens/task_screen.dart';
 import '../screens/analytics_screen.dart';
@@ -17,13 +18,14 @@ class _MobileLayoutState extends State<MobileLayout> {
 
   final screens = const [
     HomeScreen(),
+    OrganizationScreen(),
     ProjectScreen(),
     TaskScreen(),
     AnalyticsScreen(),
     SettingsScreen(),
   ];
 
-  final titles = const ['ホーム', 'プロジェクト', 'タスク', 'アナリティクス', '設定'];
+  final titles = const ['ホーム', '組織', 'プロジェクト', 'タスク', 'アナリティクス', '設定'];
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +41,7 @@ class _MobileLayoutState extends State<MobileLayout> {
         },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'ホーム'),
+          NavigationDestination(icon: Icon(Icons.apartment), label: '組織'),
           NavigationDestination(icon: Icon(Icons.folder), label: 'プロジェクト'),
           NavigationDestination(icon: Icon(Icons.task_alt), label: 'タスク'),
           NavigationDestination(icon: Icon(Icons.bar_chart), label: 'アナリティクス'),

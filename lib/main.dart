@@ -8,9 +8,11 @@ import 'screens/auth/auth_screen.dart';
 import 'screens/auth/email_verification_screen.dart';
 import 'screens/desktop_gantt_widget_screen.dart';
 import 'screens/task_detail_screen.dart';
+import 'services/task_notification_service.dart';
 import 'systems/auth_controller.dart';
 import 'systems/auth_scope.dart';
 import 'widgets/native_gantt_bridge.dart';
+import 'widgets/task_reminder_overlay.dart';
 
 const desktopWidgetArgument = '--desktop-widget';
 
@@ -32,6 +34,7 @@ Future<void> main(List<String> args) async {
   }
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await TaskNotificationService.instance.initialize();
 
   runApp(const TaskMan(showDesktopWidget: false));
 }
@@ -77,6 +80,15 @@ class _TaskManState extends State<TaskMan> {
     _showDesktopWidget = widget.showDesktopWidget;
     if (!_showDesktopWidget) {
       _ensureAuthController();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+
+        TaskNotificationService.instance.setTaskTapHandler(
+          _openTaskDetailFromNotification,
+        );
+      });
     }
     _windowChannel.setMethodCallHandler(_handleWindowMethodCall);
   }
@@ -84,6 +96,7 @@ class _TaskManState extends State<TaskMan> {
   @override
   void dispose() {
     _windowChannel.setMethodCallHandler(null);
+    TaskNotificationService.instance.setTaskTapHandler(null);
     _authController?.dispose();
     super.dispose();
   }
@@ -139,6 +152,25 @@ class _TaskManState extends State<TaskMan> {
     );
   }
 
+  void _openTaskDetailFromNotification(String taskId) {
+    if (taskId.trim().isEmpty || !mounted) {
+      return;
+    }
+
+    _ensureAuthController();
+    if (_showDesktopWidget) {
+      setState(() {
+        _showDesktopWidget = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openTaskDetailFromNativeGantt(taskId);
+      });
+      return;
+    }
+
+    _openTaskDetailFromNativeGantt(taskId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final home = _showDesktopWidget
@@ -147,7 +179,9 @@ class _TaskManState extends State<TaskMan> {
           )
         : _MainWindowAuthGate(
             authController: _ensureAuthController(),
-            child: const NativeGanttBridge(child: ResponsiveLayout()),
+            child: const NativeGanttBridge(
+              child: TaskReminderOverlay(child: ResponsiveLayout()),
+            ),
           );
     final app = MaterialApp(
       key: ValueKey(_showDesktopWidget ? 'desktop-widget' : 'main-window'),

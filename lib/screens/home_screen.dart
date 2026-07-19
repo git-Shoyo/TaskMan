@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:taskman/repositories/project_repository.dart';
 import 'package:taskman/repositories/task_repository.dart';
@@ -22,8 +24,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _windowChannel = MethodChannel('taskman/window');
+
   final projectRepository = ProjectRepository();
   final taskRepository = TaskRepository();
+
+  bool get _supportsAndroidHomeWidget =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   void _openProject(Project project) {
     Navigator.push(
@@ -51,6 +58,35 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(builder: (context) => const AddProjectScreen()),
     );
+  }
+
+  Future<void> _requestAndroidGanttWidgetPin() async {
+    try {
+      final status = await _windowChannel.invokeMethod<String>(
+        'requestPinAndroidGanttWidget',
+      );
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_androidGanttPinMessage(status))));
+    } on MissingPluginException {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Android 実行時のみ追加できます')));
+    } on PlatformException {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('小窓ガントの追加を開始できませんでした')));
+    }
   }
 
   Future<void> _openAddTask(List<Project> projects) async {
@@ -341,6 +377,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       _HomeHeader(
                         onAddTask: () => _openAddTask(projects),
                         onAddProject: _openAddProject,
+                        onAddWidget: _supportsAndroidHomeWidget
+                            ? _requestAndroidGanttWidgetPin
+                            : null,
                       ),
                       const SizedBox(height: 16),
                       if (overdueTasks.isNotEmpty) ...[
@@ -376,11 +415,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+String _androidGanttPinMessage(String? status) {
+  switch (status) {
+    case 'requested':
+      return 'ホーム画面への追加を確認してください';
+    case 'alreadyAdded':
+      return '小窓ガントは既にホーム画面にあります';
+    case 'unsupported':
+    default:
+      return 'ウィジェット一覧から小窓ガントを追加してください';
+  }
+}
+
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.onAddTask, required this.onAddProject});
+  const _HomeHeader({
+    required this.onAddTask,
+    required this.onAddProject,
+    required this.onAddWidget,
+  });
 
   final VoidCallback onAddTask;
   final VoidCallback onAddProject;
+  final VoidCallback? onAddWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -400,6 +456,12 @@ class _HomeHeader extends StatelessWidget {
           icon: const Icon(Icons.create_new_folder),
           label: const Text('プロジェクト作成'),
         ),
+        if (onAddWidget != null)
+          FilledButton.tonalIcon(
+            onPressed: onAddWidget,
+            icon: const Icon(Icons.dashboard_customize),
+            label: const Text('小窓追加'),
+          ),
       ],
     );
 

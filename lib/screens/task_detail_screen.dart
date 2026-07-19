@@ -221,216 +221,39 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
   }
 
-  Future<void> _editTaskDetails(Task task) async {
-    final categoryController = TextEditingController(text: task.category);
-    DateTime? draftStartDate = task.startDate;
-    DateTime? draftDeadline = task.deadline;
-    int? draftPriority = task.priority;
-    bool isSaving = false;
-    String? errorText;
-
-    Future<void> pickDate(
-      BuildContext dialogContext,
-      StateSetter setDialogState, {
-      required bool isStartDate,
-    }) async {
-      final currentValue = isStartDate ? draftStartDate : draftDeadline;
-      final picked = await showDatePicker(
-        context: dialogContext,
-        initialDate: currentValue ?? DateTime.now(),
-        firstDate: DateTime(2000),
-        lastDate: DateTime(2100),
-      );
-
-      if (picked == null) {
-        return;
-      }
-
-      setDialogState(() {
-        if (isStartDate) {
-          draftStartDate = picked;
-        } else {
-          draftDeadline = picked;
-        }
-        errorText = null;
-      });
-    }
-
-    Future<void> saveDetails(
-      BuildContext dialogContext,
-      StateSetter setDialogState,
-    ) async {
-      if (draftStartDate != null &&
-          draftDeadline != null &&
-          draftDeadline!.isBefore(draftStartDate!)) {
-        setDialogState(() {
-          errorText = '期限は開始日以降にしてください';
-        });
-        return;
-      }
-
-      setDialogState(() {
-        isSaving = true;
-        errorText = null;
-      });
-
-      final didUpdate = await _runMutation(
-        () => taskRepository.updateTaskDetails(
-          taskId: task.id,
-          startDate: draftStartDate,
-          deadline: draftDeadline,
-          priority: draftPriority,
-          category: categoryController.text,
+  Future<void> _openTaskDetailsEditor(Task task) async {
+    try {
+      await _editTaskDetails(task);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'taskman',
+          context: ErrorDescription('while opening the task details editor'),
         ),
-        errorMessage: '詳細情報の更新に失敗しました',
       );
 
-      if (!mounted || !dialogContext.mounted) {
+      if (!mounted) {
         return;
       }
 
-      if (didUpdate) {
-        Navigator.pop(dialogContext);
-        return;
-      }
-
-      setDialogState(() {
-        isSaving = false;
-      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('詳細情報の編集画面を開けませんでした')));
     }
+  }
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('詳細情報を編集'),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (errorText != null) ...[
-                        Text(
-                          errorText!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      _EditableDateField(
-                        label: '開始日',
-                        value: draftStartDate,
-                        onTap: isSaving
-                            ? null
-                            : () => pickDate(
-                                dialogContext,
-                                setDialogState,
-                                isStartDate: true,
-                              ),
-                        onClear: isSaving || draftStartDate == null
-                            ? null
-                            : () {
-                                setDialogState(() {
-                                  draftStartDate = null;
-                                  errorText = null;
-                                });
-                              },
-                      ),
-                      const SizedBox(height: 12),
-                      _EditableDateField(
-                        label: '期限',
-                        value: draftDeadline,
-                        onTap: isSaving
-                            ? null
-                            : () => pickDate(
-                                dialogContext,
-                                setDialogState,
-                                isStartDate: false,
-                              ),
-                        onClear: isSaving || draftDeadline == null
-                            ? null
-                            : () {
-                                setDialogState(() {
-                                  draftDeadline = null;
-                                  errorText = null;
-                                });
-                              },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int?>(
-                        key: ValueKey(draftPriority),
-                        initialValue: draftPriority,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: '重要度',
-                        ),
-                        items: const [
-                          DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('重要度なし'),
-                          ),
-                          DropdownMenuItem<int?>(value: 1, child: Text('1 低')),
-                          DropdownMenuItem<int?>(value: 2, child: Text('2')),
-                          DropdownMenuItem<int?>(value: 3, child: Text('3 中')),
-                          DropdownMenuItem<int?>(value: 4, child: Text('4')),
-                          DropdownMenuItem<int?>(value: 5, child: Text('5 高')),
-                        ],
-                        onChanged: isSaving
-                            ? null
-                            : (value) {
-                                setDialogState(() {
-                                  draftPriority = value;
-                                });
-                              },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: categoryController,
-                        enabled: !isSaving,
-                        maxLength: 40,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'カテゴリ',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () => Navigator.pop(dialogContext),
-                  child: const Text('キャンセル'),
-                ),
-                FilledButton.icon(
-                  onPressed: isSaving
-                      ? null
-                      : () => saveDetails(dialogContext, setDialogState),
-                  icon: isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save),
-                  label: const Text('保存'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  Future<void> _editTaskDetails(Task task) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => _TaskDetailsEditScreen(
+          task: task,
+          members: _membersWithTaskAssignee(projectMembers, task),
+          taskRepository: taskRepository,
+        ),
+      ),
     );
-
-    categoryController.dispose();
   }
 
   Future<void> _deleteTask(Task task) async {
@@ -544,7 +367,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       },
       onSetTodoDone: (todo, isDone) => _setTodoDone(task, todo, isDone),
       onDeleteTodo: (todo) => _deleteTodo(task, todo),
-      onEditDetails: () => _editTaskDetails(task),
+      onEditDetails: () {
+        _openTaskDetailsEditor(task);
+      },
       onAddComment: () => _addComment(task),
       onDeleteComment: (comment) => _deleteComment(task, comment),
     );
@@ -644,6 +469,487 @@ class _TaskDetailContent extends StatelessWidget {
   }
 }
 
+class _TaskDetailsEditScreen extends StatefulWidget {
+  const _TaskDetailsEditScreen({
+    required this.task,
+    required this.members,
+    required this.taskRepository,
+  });
+
+  final Task task;
+  final List<AppUser> members;
+  final TaskRepository taskRepository;
+
+  @override
+  State<_TaskDetailsEditScreen> createState() => _TaskDetailsEditScreenState();
+}
+
+class _TaskDetailsEditScreenState extends State<_TaskDetailsEditScreen> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _categoryController;
+  late final TextEditingController _memoController;
+  late final TextEditingController _tagsController;
+  late final TextEditingController _estimatedHoursController;
+  late final TextEditingController _estimatedMinutesController;
+
+  late DateTime? _startDate;
+  late DateTime? _deadline;
+  late DateTime? _reminder;
+  late int? _priority;
+  late String? _assigneeId;
+
+  bool _isSaving = false;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final task = widget.task;
+    _titleController = TextEditingController(text: task.title);
+    _categoryController = TextEditingController(text: task.category);
+    _memoController = TextEditingController(text: task.memo ?? '');
+    _tagsController = TextEditingController(text: task.tags.join(', '));
+    _estimatedHoursController = TextEditingController(
+      text: _durationHoursText(task.estimatedTime),
+    );
+    _estimatedMinutesController = TextEditingController(
+      text: _durationMinutesText(task.estimatedTime),
+    );
+    _startDate = task.startDate;
+    _deadline = task.deadline;
+    _reminder = task.reminder;
+    _priority = _editablePriority(task.priority);
+    _assigneeId = task.assigneeId;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _categoryController.dispose();
+    _memoController.dispose();
+    _tagsController.dispose();
+    _estimatedHoursController.dispose();
+    _estimatedMinutesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate({
+    required DateTime? currentValue,
+    required ValueChanged<DateTime> onPicked,
+    bool includeTime = false,
+    bool mustBeFuture = false,
+  }) async {
+    final initialValue =
+        currentValue ??
+        (mustBeFuture
+            ? DateTime.now().add(const Duration(minutes: 1))
+            : null) ??
+        DateTime.now();
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialValue,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (!mounted || pickedDate == null) {
+      return;
+    }
+
+    DateTime picked = pickedDate;
+    if (includeTime) {
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(initialValue),
+      );
+
+      if (!mounted || pickedTime == null) {
+        return;
+      }
+
+      picked = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
+    }
+
+    if (mustBeFuture && !picked.isAfter(DateTime.now())) {
+      setState(() {
+        _errorText = '未来のリマインダー日時を選択してください';
+      });
+      return;
+    }
+
+    setState(() {
+      onPicked(picked);
+      _errorText = null;
+    });
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) {
+      return;
+    }
+
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      setState(() {
+        _errorText = 'タスクタイトルを入力してください';
+      });
+      return;
+    }
+
+    if (_startDate != null &&
+        _deadline != null &&
+        _deadline!.isBefore(_startDate!)) {
+      setState(() {
+        _errorText = '期限は開始日以降にしてください';
+      });
+      return;
+    }
+
+    final Duration? estimatedTime;
+    try {
+      estimatedTime = _parseEstimatedTimeInput(
+        _estimatedHoursController.text,
+        _estimatedMinutesController.text,
+      );
+    } on FormatException {
+      setState(() {
+        _errorText = '見積もり時間を確認してください';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorText = null;
+    });
+
+    try {
+      final selectedAssignee = _findMemberById(widget.members, _assigneeId);
+      await widget.taskRepository.updateTaskDetails(
+        taskId: widget.task.id,
+        title: title,
+        memo: _memoController.text,
+        startDate: _startDate,
+        deadline: _deadline,
+        assigneeId: selectedAssignee?.id,
+        assigneeName: selectedAssignee?.label,
+        priority: _priority,
+        category: _categoryController.text,
+        estimatedTime: estimatedTime,
+        reminder: _reminder,
+        tags: _parseTags(_tagsController.text),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isSaving = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('詳細情報の更新に失敗しました')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: const BackButton(),
+        title: const Text('タスクを編集'),
+        actions: [
+          IconButton(
+            onPressed: _isSaving ? null : _save,
+            tooltip: '保存',
+            icon: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 680;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_errorText != null) ...[
+                        Text(
+                          _errorText!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      TextField(
+                        controller: _titleController,
+                        enabled: !_isSaving,
+                        maxLength: 80,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'タスクタイトル',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _MemberDropdown(
+                        label: '担当者',
+                        emptyLabel: '担当者なし',
+                        members: widget.members,
+                        selectedMemberId: _assigneeId,
+                        allowEmpty: true,
+                        isEnabled: !_isSaving,
+                        isLoading: false,
+                        onChanged: (value) {
+                          setState(() {
+                            _assigneeId = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (isWide)
+                        Row(
+                          children: [
+                            Expanded(child: _startDateField()),
+                            const SizedBox(width: 12),
+                            Expanded(child: _deadlineField()),
+                          ],
+                        )
+                      else ...[
+                        _startDateField(),
+                        const SizedBox(height: 12),
+                        _deadlineField(),
+                      ],
+                      const SizedBox(height: 12),
+                      _EditableDateField(
+                        label: 'リマインダー日時',
+                        value: _reminder,
+                        includeTime: true,
+                        onTap: _isSaving
+                            ? null
+                            : () => _pickDate(
+                                currentValue: _reminder,
+                                includeTime: true,
+                                mustBeFuture: true,
+                                onPicked: (picked) {
+                                  _reminder = picked;
+                                },
+                              ),
+                        onClear: _isSaving || _reminder == null
+                            ? null
+                            : () {
+                                setState(() {
+                                  _reminder = null;
+                                  _errorText = null;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int?>(
+                        key: ValueKey(_priority),
+                        initialValue: _priority,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: '重要度',
+                        ),
+                        items: const [
+                          DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('重要度なし'),
+                          ),
+                          DropdownMenuItem<int?>(value: 1, child: Text('1 低')),
+                          DropdownMenuItem<int?>(value: 2, child: Text('2')),
+                          DropdownMenuItem<int?>(value: 3, child: Text('3 中')),
+                          DropdownMenuItem<int?>(value: 4, child: Text('4')),
+                          DropdownMenuItem<int?>(value: 5, child: Text('5 高')),
+                        ],
+                        onChanged: _isSaving
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  _priority = value;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      _estimateFields(isWide: isWide),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _categoryController,
+                        enabled: !_isSaving,
+                        maxLength: 40,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'カテゴリ',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _tagsController,
+                        enabled: !_isSaving,
+                        maxLength: 120,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'タグ',
+                          helperText: 'カンマ区切りで入力',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 180,
+                        child: TextField(
+                          controller: _memoController,
+                          enabled: !_isSaving,
+                          expands: true,
+                          minLines: null,
+                          maxLines: null,
+                          maxLength: 500,
+                          textAlignVertical: TextAlignVertical.top,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'メモ',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: _isSaving ? null : _save,
+                          icon: _isSaving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save),
+                          label: const Text('保存'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _startDateField() {
+    return _EditableDateField(
+      label: '開始日',
+      value: _startDate,
+      onTap: _isSaving
+          ? null
+          : () => _pickDate(
+              currentValue: _startDate,
+              onPicked: (picked) {
+                _startDate = picked;
+              },
+            ),
+      onClear: _isSaving || _startDate == null
+          ? null
+          : () {
+              setState(() {
+                _startDate = null;
+                _errorText = null;
+              });
+            },
+    );
+  }
+
+  Widget _deadlineField() {
+    return _EditableDateField(
+      label: '期限',
+      value: _deadline,
+      onTap: _isSaving
+          ? null
+          : () => _pickDate(
+              currentValue: _deadline,
+              onPicked: (picked) {
+                _deadline = picked;
+              },
+            ),
+      onClear: _isSaving || _deadline == null
+          ? null
+          : () {
+              setState(() {
+                _deadline = null;
+                _errorText = null;
+              });
+            },
+    );
+  }
+
+  Widget _estimateFields({required bool isWide}) {
+    final hoursField = TextField(
+      controller: _estimatedHoursController,
+      enabled: !_isSaving,
+      keyboardType: TextInputType.number,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        labelText: '見積もり 時間',
+        suffixText: '時間',
+      ),
+    );
+    final minutesField = TextField(
+      controller: _estimatedMinutesController,
+      enabled: !_isSaving,
+      keyboardType: TextInputType.number,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        labelText: '見積もり 分',
+        suffixText: '分',
+      ),
+    );
+
+    if (isWide) {
+      return Row(
+        children: [
+          Expanded(child: hoursField),
+          const SizedBox(width: 12),
+          Expanded(child: minutesField),
+        ],
+      );
+    }
+
+    return Column(
+      children: [hoursField, const SizedBox(height: 12), minutesField],
+    );
+  }
+}
+
 class _TaskSummary extends StatelessWidget {
   const _TaskSummary({
     required this.task,
@@ -680,6 +986,8 @@ class _TaskSummary extends StatelessWidget {
                   constraints: const BoxConstraints(maxWidth: 620),
                   child: Text(
                     task.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                 ),
@@ -790,6 +1098,21 @@ class _TaskMetaSection extends StatelessWidget {
         value: task.assigneeName?.trim().isEmpty ?? true
             ? '未設定'
             : task.assigneeName!,
+      ),
+      _TaskMetaItem(
+        icon: Icons.timer_outlined,
+        label: '見積もり',
+        value: _formatDuration(task.estimatedTime),
+      ),
+      _TaskMetaItem(
+        icon: Icons.notifications_none,
+        label: 'リマインダー',
+        value: _formatDateTime(task.reminder),
+      ),
+      _TaskMetaItem(
+        icon: Icons.tag,
+        label: 'タグ',
+        value: task.tags.isEmpty ? '未設定' : task.tags.join(', '),
       ),
       _TaskMetaItem(
         icon: Icons.schedule,
@@ -1190,12 +1513,14 @@ class _EditableDateField extends StatelessWidget {
     required this.value,
     required this.onTap,
     required this.onClear,
+    this.includeTime = false,
   });
 
   final String label;
   final DateTime? value;
   final VoidCallback? onTap;
   final VoidCallback? onClear;
+  final bool includeTime;
 
   @override
   Widget build(BuildContext context) {
@@ -1208,11 +1533,17 @@ class _EditableDateField extends StatelessWidget {
           labelText: label,
           suffixIcon: IconButton(
             onPressed: onClear ?? onTap,
-            tooltip: value == null ? '日付を選択' : '日付をクリア',
+            tooltip: value == null
+                ? (includeTime ? '日時を選択' : '日付を選択')
+                : (includeTime ? '日時をクリア' : '日付をクリア'),
             icon: Icon(value == null ? Icons.calendar_today : Icons.clear),
           ),
         ),
-        child: Text(value == null ? '未設定' : _dateFormat.format(value!)),
+        child: Text(
+          value == null
+              ? '未設定'
+              : (includeTime ? _dateTimeFormat : _dateFormat).format(value!),
+        ),
       ),
     );
   }
@@ -1241,7 +1572,9 @@ class _MemberDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final availableMembers = members.isEmpty ? [AppUser.local()] : members;
+    final availableMembers = _uniqueMembers(
+      members.isEmpty ? [AppUser.local()] : members,
+    );
     final memberIds = availableMembers.map((member) => member.id).toSet();
     final selectedValue =
         selectedMemberId != null && memberIds.contains(selectedMemberId)
@@ -1482,12 +1815,87 @@ String _formatDate(DateTime? date) {
   return _dateFormat.format(date);
 }
 
+String _formatDateTime(DateTime? date) {
+  if (date == null) {
+    return '未設定';
+  }
+
+  return _dateTimeFormat.format(date);
+}
+
 String _formatPriority(int? priority) {
   if (priority == null) {
     return '重要度なし';
   }
 
   return '重要度 $priority';
+}
+
+String _formatDuration(Duration? duration) {
+  if (duration == null || duration == Duration.zero) {
+    return '未設定';
+  }
+
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes.remainder(60);
+
+  if (hours == 0) {
+    return '$minutes分';
+  }
+  if (minutes == 0) {
+    return '$hours時間';
+  }
+
+  return '$hours時間$minutes分';
+}
+
+String _durationHoursText(Duration? duration) {
+  if (duration == null || duration == Duration.zero) {
+    return '';
+  }
+
+  final hours = duration.inHours;
+  return hours == 0 ? '' : hours.toString();
+}
+
+String _durationMinutesText(Duration? duration) {
+  if (duration == null || duration == Duration.zero) {
+    return '';
+  }
+
+  final minutes = duration.inMinutes.remainder(60);
+  return minutes == 0 ? '' : minutes.toString();
+}
+
+Duration? _parseEstimatedTimeInput(String hoursText, String minutesText) {
+  final rawHours = hoursText.trim();
+  final rawMinutes = minutesText.trim();
+
+  if (rawHours.isEmpty && rawMinutes.isEmpty) {
+    return null;
+  }
+
+  final hours = rawHours.isEmpty ? 0 : int.tryParse(rawHours);
+  final minutes = rawMinutes.isEmpty ? 0 : int.tryParse(rawMinutes);
+
+  if (hours == null || minutes == null || hours < 0 || minutes < 0) {
+    throw const FormatException('Invalid estimated time.');
+  }
+
+  if (hours == 0 && minutes == 0) {
+    return null;
+  }
+
+  return Duration(hours: hours, minutes: minutes);
+}
+
+List<String> _parseTags(String rawTags) {
+  return rawTags
+      .split(',')
+      .map((tag) => tag.trim())
+      .where((tag) => tag.isNotEmpty)
+      .toSet()
+      .toList();
 }
 
 String _authorInitial(String authorName) {
@@ -1512,4 +1920,56 @@ AppUser? _findMemberById(List<AppUser> members, String? memberId) {
   }
 
   return null;
+}
+
+List<AppUser> _membersWithTaskAssignee(List<AppUser> members, Task task) {
+  final normalizedMembers = _uniqueMembers(
+    members.isEmpty ? [AppUser.local()] : members,
+  );
+  final assigneeId = task.assigneeId?.trim();
+
+  if (assigneeId == null ||
+      assigneeId.isEmpty ||
+      normalizedMembers.any((member) => member.id == assigneeId)) {
+    return normalizedMembers;
+  }
+
+  final assigneeName = task.assigneeName?.trim();
+  return [
+    ...normalizedMembers,
+    AppUser(
+      id: assigneeId,
+      userId: assigneeId,
+      displayName: assigneeName == null || assigneeName.isEmpty
+          ? assigneeId
+          : assigneeName,
+    ),
+  ];
+}
+
+List<AppUser> _uniqueMembers(List<AppUser> members) {
+  final membersById = <String, AppUser>{};
+
+  for (final member in members) {
+    final id = member.id.trim();
+    if (id.isEmpty || membersById.containsKey(id)) {
+      continue;
+    }
+
+    membersById[id] = member;
+  }
+
+  if (membersById.isEmpty) {
+    return [AppUser.local()];
+  }
+
+  return membersById.values.toList();
+}
+
+int? _editablePriority(int? priority) {
+  if (priority == null || priority < 1 || priority > 5) {
+    return null;
+  }
+
+  return priority;
 }

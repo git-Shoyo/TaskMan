@@ -1,0 +1,33 @@
+name: Flutter
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    env:
+      DART_SUPPRESS_ANALYTICS: true
+      FLUTTER_SUPPRESS_ANALYTICS: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

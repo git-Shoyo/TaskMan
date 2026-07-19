@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="taskman_gantt_widget_label">TaskMan 小窓ガント</string>
+    <string name="taskman_gantt_widget_4x4_label">TaskMan 小窓ガント 4x4</string>
+    <string name="taskman_gantt_widget_4x5_label">TaskMan 小窓ガント 4x5</string>
+    <string name="taskman_gantt_widget_5x4_label">TaskMan 小窓ガント 5x4</string>
+    <string name="taskman_gantt_widget_5x5_label">TaskMan 小窓ガント 5x5</string>
+    <string name="taskman_gantt_widget_description">7日間のタスク予定を表示します</string>
+</resources>

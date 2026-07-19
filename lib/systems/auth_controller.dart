@@ -43,6 +43,7 @@ class AuthController extends ChangeNotifier {
   bool get isEmailVerified => _firebaseUser?.emailVerified ?? false;
   bool get needsEmailVerification =>
       isSignedIn && isEmailPasswordUser && !isEmailVerified;
+  bool get isMicrosoftAccountLinked => _authRepository.isMicrosoftAccountLinked;
   Object? get lastError => _lastError;
 
   Future<void> signIn({required String email, required String password}) async {
@@ -126,6 +127,18 @@ class AuthController extends ChangeNotifier {
 
   Future<void> signOut() {
     return _authRepository.signOut();
+  }
+
+  Future<firebase_auth.UserCredential> linkMicrosoftPlannerAccount() {
+    return _authRepository.linkMicrosoftPlannerAccount();
+  }
+
+  Future<firebase_auth.UserCredential> reauthenticateMicrosoftPlannerAccount() {
+    return _authRepository.reauthenticateMicrosoftPlannerAccount();
+  }
+
+  Future<void> unlinkMicrosoftAccount() {
+    return _authRepository.unlinkMicrosoftAccount();
   }
 
   Future<void> _handleAuthUser(firebase_auth.User? user) async {

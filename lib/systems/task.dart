@@ -19,6 +19,12 @@ class Task {
   List<String> tags;
   List<TaskTodo> todos;
   List<TaskComment> comments;
+  String? externalSource;
+  String? externalId;
+  String? externalUrl;
+  String? externalPlanId;
+  String? externalBucketId;
+  DateTime? externalUpdatedAt;
 
   Task({
     required this.title,
@@ -39,6 +45,12 @@ class Task {
     List<String>? tags,
     List<TaskTodo>? todos,
     List<TaskComment>? comments,
+    this.externalSource,
+    this.externalId,
+    this.externalUrl,
+    this.externalPlanId,
+    this.externalBucketId,
+    this.externalUpdatedAt,
   }) : createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now(),
        tags = tags ?? [],
@@ -78,6 +90,12 @@ class Task {
       tags: List<String>.from(data['tags'] as List? ?? const []),
       todos: _readTodos(data['todos']),
       comments: _readComments(data['comments']),
+      externalSource: data['externalSource'] as String?,
+      externalId: data['externalId'] as String?,
+      externalUrl: data['externalUrl'] as String?,
+      externalPlanId: data['externalPlanId'] as String?,
+      externalBucketId: data['externalBucketId'] as String?,
+      externalUpdatedAt: readDateTime(data['externalUpdatedAt']),
     );
   }
 
@@ -100,6 +118,14 @@ class Task {
       'tags': tags,
       'todos': todos.map((todo) => todo.toFirestore()).toList(),
       'comments': comments.map((comment) => comment.toFirestore()).toList(),
+      'externalSource': externalSource,
+      'externalId': externalId,
+      'externalUrl': externalUrl,
+      'externalPlanId': externalPlanId,
+      'externalBucketId': externalBucketId,
+      'externalUpdatedAt': externalUpdatedAt == null
+          ? null
+          : Timestamp.fromDate(externalUpdatedAt!),
     };
   }
 

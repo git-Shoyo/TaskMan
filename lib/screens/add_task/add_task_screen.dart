@@ -7,6 +7,7 @@ import 'package:taskman/systems/project.dart';
 import 'package:taskman/systems/task.dart';
 
 final DateFormat _dateFormat = DateFormat('yyyy/MM/dd');
+final DateFormat _dateTimeFormat = DateFormat('yyyy/MM/dd HH:mm');
 
 class AddTaskScreen extends StatefulWidget {
   const AddTaskScreen({super.key, required this.project});
@@ -21,11 +22,15 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   final titleController = TextEditingController();
   final categoryController = TextEditingController();
   final memoController = TextEditingController();
+  final estimatedHoursController = TextEditingController();
+  final estimatedMinutesController = TextEditingController();
+  final tagsController = TextEditingController();
   final taskRepository = TaskRepository();
   final userRepository = UserRepository();
 
   DateTime? startDate;
   DateTime? deadline;
+  DateTime? reminder;
   int? priority;
   String? selectedAssigneeId;
   List<AppUser> projectMembers = [AppUser.local()];
@@ -78,6 +83,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     final title = titleController.text.trim();
     final category = categoryController.text.trim();
     final memo = memoController.text.trim();
+    final Duration? estimatedTime;
 
     if (title.isEmpty) {
       ScaffoldMessenger.of(
@@ -92,6 +98,18 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('期限は開始日以降にしてください')));
+      return;
+    }
+
+    try {
+      estimatedTime = _parseEstimatedTimeInput(
+        estimatedHoursController.text,
+        estimatedMinutesController.text,
+      );
+    } on FormatException {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('見積もり時間を確認してください')));
       return;
     }
 
@@ -117,6 +135,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
           priority: priority,
           category: category,
           memo: memo.isEmpty ? null : memo,
+          estimatedTime: estimatedTime,
+          reminder: reminder,
+          tags: _parseTags(tagsController.text),
         ),
       );
 
@@ -164,11 +185,57 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     });
   }
 
+  Future<void> pickReminderDateTime() async {
+    final initialValue =
+        reminder ?? deadline ?? DateTime.now().add(const Duration(minutes: 1));
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialValue,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (!mounted || pickedDate == null) {
+      return;
+    }
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialValue),
+    );
+
+    if (!mounted || pickedTime == null) {
+      return;
+    }
+
+    final pickedReminder = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (!pickedReminder.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('未来のリマインダー日時を選択してください')));
+      return;
+    }
+
+    setState(() {
+      reminder = pickedReminder;
+    });
+  }
+
   @override
   void dispose() {
     titleController.dispose();
     categoryController.dispose();
     memoController.dispose();
+    estimatedHoursController.dispose();
+    estimatedMinutesController.dispose();
+    tagsController.dispose();
     super.dispose();
   }
 
@@ -332,12 +399,90 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final hoursField = TextField(
+                            controller: estimatedHoursController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: '見積もり 時間',
+                              suffixText: '時間',
+                            ),
+                          );
+                          final minutesField = TextField(
+                            controller: estimatedMinutesController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: '見積もり 分',
+                              suffixText: '分',
+                            ),
+                          );
+
+                          if (constraints.maxWidth >= 560) {
+                            return Row(
+                              children: [
+                                Expanded(child: hoursField),
+                                const SizedBox(width: 12),
+                                Expanded(child: minutesField),
+                              ],
+                            );
+                          }
+
+                          return Column(
+                            children: [
+                              hoursField,
+                              const SizedBox(height: 12),
+                              minutesField,
+                            ],
+                          );
+                        },
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              estimatedHoursController.clear();
+                              estimatedMinutesController.clear();
+                            });
+                          },
+                          icon: const Icon(Icons.clear),
+                          label: const Text('見積もりをクリア'),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _DateField(
+                        label: 'リマインダー日時',
+                        value: reminder,
+                        includeTime: true,
+                        onTap: pickReminderDateTime,
+                        onClear: reminder == null
+                            ? null
+                            : () {
+                                setState(() {
+                                  reminder = null;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 12),
                       TextField(
                         controller: categoryController,
                         maxLength: 40,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           labelText: 'カテゴリ',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: tagsController,
+                        maxLength: 120,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: 'タグ',
+                          helperText: 'カンマ区切りで入力',
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -437,12 +582,14 @@ class _DateField extends StatelessWidget {
     required this.value,
     required this.onTap,
     required this.onClear,
+    this.includeTime = false,
   });
 
   final String label;
   final DateTime? value;
   final VoidCallback onTap;
   final VoidCallback? onClear;
+  final bool includeTime;
 
   @override
   Widget build(BuildContext context) {
@@ -455,11 +602,17 @@ class _DateField extends StatelessWidget {
           labelText: label,
           suffixIcon: IconButton(
             onPressed: onClear ?? onTap,
-            tooltip: value == null ? '日付を選択' : '日付をクリア',
+            tooltip: value == null
+                ? (includeTime ? '日時を選択' : '日付を選択')
+                : (includeTime ? '日時をクリア' : '日付をクリア'),
             icon: Icon(value == null ? Icons.calendar_today : Icons.clear),
           ),
         ),
-        child: Text(value == null ? '未設定' : _dateFormat.format(value!)),
+        child: Text(
+          value == null
+              ? '未設定'
+              : (includeTime ? _dateTimeFormat : _dateFormat).format(value!),
+        ),
       ),
     );
   }
@@ -477,4 +630,35 @@ AppUser? _findMemberById(List<AppUser> members, String? memberId) {
   }
 
   return null;
+}
+
+Duration? _parseEstimatedTimeInput(String hoursText, String minutesText) {
+  final rawHours = hoursText.trim();
+  final rawMinutes = minutesText.trim();
+
+  if (rawHours.isEmpty && rawMinutes.isEmpty) {
+    return null;
+  }
+
+  final hours = rawHours.isEmpty ? 0 : int.tryParse(rawHours);
+  final minutes = rawMinutes.isEmpty ? 0 : int.tryParse(rawMinutes);
+
+  if (hours == null || minutes == null || hours < 0 || minutes < 0) {
+    throw const FormatException('Invalid estimated time.');
+  }
+
+  if (hours == 0 && minutes == 0) {
+    return null;
+  }
+
+  return Duration(hours: hours, minutes: minutes);
+}
+
+List<String> _parseTags(String rawTags) {
+  return rawTags
+      .split(',')
+      .map((tag) => tag.trim())
+      .where((tag) => tag.isNotEmpty)
+      .toSet()
+      .toList();
 }

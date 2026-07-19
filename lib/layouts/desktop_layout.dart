@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/home_screen.dart';
+import '../screens/organization_screen.dart';
 import '../screens/project_screen.dart';
 import '../screens/task_screen.dart';
 import '../screens/analytics_screen.dart';
@@ -17,6 +18,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
   final screens = const [
     HomeScreen(),
+    OrganizationScreen(),
     ProjectScreen(),
     TaskScreen(),
     AnalyticsScreen(),
@@ -45,6 +47,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                 NavigationRailDestination(
                   icon: Icon(Icons.home),
                   label: Text('ホーム'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.apartment),
+                  label: Text('組織'),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.folder),

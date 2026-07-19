@@ -1,5 +1,49 @@
 # taskman
 
+TaskMan は Firebase/Firestore を使う Flutter 製のタスク管理アプリです。
+組織、プロジェクト、タスク、Issue、分析、Gantt 表示、Microsoft Planner 取り込みを扱います。
+
+## 開発環境
+
+- Flutter stable
+- Dart SDK 3.12 以降
+- Firebase CLI
+- Firebase Authentication: Email/Password を有効化
+- Cloud Firestore を作成
+
+## セットアップ
+
+```powershell
+flutter pub get
+```
+
+Firebase 設定は `lib/firebase_options.dart` と `firebase.json` に含まれています。
+Firestore ルールを更新した場合は、次を実行してください。
+
+```powershell
+firebase deploy --only firestore:rules,firestore:indexes
+```
+
+## ローカル検証
+
+```powershell
+flutter analyze
+flutter test
+```
+
+CI でも同じ検証を実行します。
+
+## 対応プラットフォーム
+
+- Android / iOS / macOS / Windows / Web は Firebase 設定済み
+- Linux は Flutter プロジェクト自体はありますが、Firebase options が未設定です
+- Windows では小窓 Gantt のネイティブ表示に対応しています
+
+## 既知の制限
+
+- Microsoft Planner 連携は接続直後または設定画面からの手動同期です。常駐の定期同期は未実装です。
+- Firestore のユーザー検索はサインイン済みユーザーが公開プロフィールを検索できる前提です。
+
 # commit規則
 ```git commit
 <type>(scope): overview
@@ -46,3 +90,27 @@
 | `revert/`     | コミットの取り消し              | `revert/remove-cache`       |
 | `spike/`      | 技術検証                   | `spike/flutter-web`         |
 | `wip/`        | 作業途中（Work In Progress） | `wip/audio-filter`          |
+
+# Microsoft 連携のビルド設定
+
+Windows/macOS/Linux では Microsoft の device code flow を使います。TaskMan 用 Azure アプリ登録の Application (client) ID は既定値として埋め込み済みです。
+
+埋め込み済み client ID:
+
+```text
+e89150a6-18fa-4ef0-9b1e-88aa85df3041
+```
+
+別の Azure アプリ登録を使う場合は、ビルド時に `MICROSOFT_CLIENT_ID` で上書きできます。
+
+```powershell
+flutter build windows --dart-define=MICROSOFT_CLIENT_ID=<Application client ID>
+```
+
+必要に応じてテナントも固定できます。既定値は `organizations` です。
+
+```powershell
+flutter build windows --dart-define=MICROSOFT_CLIENT_ID=<Application client ID> --dart-define=MICROSOFT_TENANT=organizations
+```
+
+Azure アプリ登録では公開クライアント フローを許可し、Microsoft Graph の `User.Read` と `Tasks.Read` を使えるようにしてください。

@@ -14,7 +14,229 @@ service cloud.firestore {
       return signedIn()
         && projectId is string
         && exists(/databases/$(database)/documents/projects/$(projectId))
-        && request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.memberIds;
+        && (
+          request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.memberIds
+          || (
+            get(/databases/$(database)/documents/projects/$(projectId)).data.organizationId is string
+            && isOrganizationMember(get(/databases/$(database)/documents/projects/$(projectId)).data.organizationId)
+          )
+        );
+    }
+
+    function isOrganizationMember(organizationId) {
+      return signedIn()
+        && organizationId is string
+        && exists(/databases/$(database)/documents/organizations/$(organizationId))
+        && request.auth.uid in get(/databases/$(database)/documents/organizations/$(organizationId)).data.memberIds;
+    }
+
+    function hasReadableOrganization(data) {
+      return data.organizationId is string
+        && isOrganizationMember(data.organizationId);
+    }
+
+    function requestOrganizationIsAllowed() {
+      return !request.resource.data.keys().hasAny(['organizationId'])
+        || request.resource.data.organizationId == null
+        || isOrganizationMember(request.resource.data.organizationId);
+    }
+
+    function hasRequiredString(data, field, maxLength) {
+      return data.keys().hasAll([field])
+        && data[field] is string
+        && data[field].size() > 0
+        && data[field].size() <= maxLength;
+    }
+
+    function hasOptionalString(data, field, maxLength) {
+      return !data.keys().hasAny([field])
+        || data[field] == null
+        || (
+          data[field] is string
+          && data[field].size() <= maxLength
+        );
+    }
+
+    function hasOptionalTimestamp(data, field) {
+      return !data.keys().hasAny([field])
+        || data[field] == null
+        || data[field] is timestamp;
+    }
+
+    function hasOptionalIntRange(data, field, minValue, maxValue) {
+      return !data.keys().hasAny([field])
+        || data[field] == null
+        || (
+          data[field] is int
+          && data[field] >= minValue
+          && data[field] <= maxValue
+        );
+    }
+
+    function hasOptionalStringList(data, field, maxItems) {
+      return !data.keys().hasAny([field])
+        || (
+          data[field] is list
+          && data[field].size() <= maxItems
+        );
+    }
+
+    function hasMemberShape(data) {
+      return data.keys().hasAll(['ownerId', 'memberIds', 'memberRoles'])
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.memberIds is list
+        && data.memberIds.size() <= 100
+        && data.memberRoles is map;
+    }
+
+    function validOrganizationData(data) {
+      return data.keys().hasOnly([
+          'name',
+          'nameKey',
+          'description',
+          'ownerId',
+          'memberIds',
+          'memberRoles',
+          'createdAt',
+          'updatedAt',
+          'isArchived',
+          'color'
+        ])
+        && hasRequiredString(data, 'name', 50)
+        && hasRequiredString(data, 'nameKey', 50)
+        && hasOptionalString(data, 'description', 1000)
+        && hasMemberShape(data)
+        && data.ownerId in data.memberIds
+        && data.isArchived is bool
+        && hasOptionalString(data, 'color', 32)
+        && hasOptionalTimestamp(data, 'createdAt')
+        && hasOptionalTimestamp(data, 'updatedAt');
+    }
+
+    function validProjectData(data) {
+      return data.keys().hasOnly([
+          'name',
+          'nameKey',
+          'description',
+          'ownerId',
+          'organizationId',
+          'memberIds',
+          'memberRoles',
+          'createdAt',
+          'updatedAt',
+          'startDate',
+          'deadline',
+          'isArchived',
+          'color',
+          'icon'
+        ])
+        && hasRequiredString(data, 'name', 50)
+        && hasRequiredString(data, 'nameKey', 50)
+        && hasOptionalString(data, 'description', 1000)
+        && hasOptionalString(data, 'organizationId', 128)
+        && hasMemberShape(data)
+        && data.ownerId in data.memberIds
+        && data.isArchived is bool
+        && hasOptionalString(data, 'color', 32)
+        && hasOptionalString(data, 'icon', 64)
+        && hasOptionalTimestamp(data, 'createdAt')
+        && hasOptionalTimestamp(data, 'updatedAt')
+        && hasOptionalTimestamp(data, 'startDate')
+        && hasOptionalTimestamp(data, 'deadline');
+    }
+
+    function validTaskData(data) {
+      return data.keys().hasOnly([
+          'title',
+          'deadline',
+          'startDate',
+          'isDone',
+          'memo',
+          'createdAt',
+          'updatedAt',
+          'priority',
+          'category',
+          'projectId',
+          'assigneeId',
+          'assigneeName',
+          'estimatedTimeSeconds',
+          'reminder',
+          'tags',
+          'todos',
+          'comments',
+          'externalSource',
+          'externalId',
+          'externalUrl',
+          'externalPlanId',
+          'externalBucketId',
+          'externalUpdatedAt'
+        ])
+        && hasRequiredString(data, 'title', 80)
+        && hasRequiredString(data, 'projectId', 128)
+        && data.isDone is bool
+        && hasOptionalString(data, 'memo', 500)
+        && hasOptionalString(data, 'category', 40)
+        && hasOptionalString(data, 'assigneeId', 128)
+        && hasOptionalString(data, 'assigneeName', 120)
+        && hasOptionalString(data, 'externalSource', 64)
+        && hasOptionalString(data, 'externalId', 256)
+        && hasOptionalString(data, 'externalUrl', 2048)
+        && hasOptionalString(data, 'externalPlanId', 256)
+        && hasOptionalString(data, 'externalBucketId', 256)
+        && hasOptionalIntRange(data, 'priority', 1, 5)
+        && hasOptionalIntRange(data, 'estimatedTimeSeconds', 0, 31536000)
+        && hasOptionalStringList(data, 'tags', 20)
+        && hasOptionalStringList(data, 'todos', 200)
+        && hasOptionalStringList(data, 'comments', 200)
+        && hasOptionalTimestamp(data, 'createdAt')
+        && hasOptionalTimestamp(data, 'updatedAt')
+        && hasOptionalTimestamp(data, 'startDate')
+        && hasOptionalTimestamp(data, 'deadline')
+        && hasOptionalTimestamp(data, 'reminder')
+        && hasOptionalTimestamp(data, 'externalUpdatedAt');
+    }
+
+    function validIssueData(data) {
+      return data.keys().hasOnly([
+          'projectId',
+          'organizationId',
+          'issueNumber',
+          'title',
+          'body',
+          'status',
+          'isOpen',
+          'labels',
+          'assigneeId',
+          'assigneeName',
+          'authorId',
+          'authorName',
+          'externalSource',
+          'externalId',
+          'externalUrl',
+          'createdAt',
+          'updatedAt',
+          'closedAt'
+        ])
+        && hasRequiredString(data, 'projectId', 128)
+        && hasRequiredString(data, 'title', 100)
+        && data.status in ['open', 'closed']
+        && data.isOpen is bool
+        && data.isOpen == (data.status == 'open')
+        && hasOptionalString(data, 'organizationId', 128)
+        && hasOptionalIntRange(data, 'issueNumber', 1, 1000000000)
+        && hasOptionalString(data, 'body', 1200)
+        && hasOptionalStringList(data, 'labels', 20)
+        && hasOptionalString(data, 'assigneeId', 128)
+        && hasOptionalString(data, 'assigneeName', 120)
+        && hasOptionalString(data, 'authorId', 128)
+        && hasOptionalString(data, 'authorName', 120)
+        && hasOptionalString(data, 'externalSource', 64)
+        && hasOptionalString(data, 'externalId', 256)
+        && hasOptionalString(data, 'externalUrl', 2048)
+        && hasOptionalTimestamp(data, 'createdAt')
+        && hasOptionalTimestamp(data, 'updatedAt')
+        && hasOptionalTimestamp(data, 'closedAt');
     }
 
     match /users/{userId} {
@@ -36,16 +258,43 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid;
     }
 
-    match /projects/{projectId} {
+    match /organizations/{organizationId} {
       allow read: if signedIn()
         && request.auth.uid in resource.data.memberIds;
       allow create: if signedIn()
+        && validOrganizationData(request.resource.data)
         && request.resource.data.ownerId == request.auth.uid
         && request.auth.uid in request.resource.data.memberIds;
       allow update: if signedIn()
+        && validOrganizationData(request.resource.data)
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == resource.data.ownerId
         && request.auth.uid in request.resource.data.memberIds;
+      allow delete: if false;
+    }
+
+    match /organizationNameKeys/{ownerId}/names/{nameKey} {
+      allow read, create, update, delete: if signedIn()
+        && ownerId == request.auth.uid;
+    }
+
+    match /projects/{projectId} {
+      allow read: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberIds
+          || hasReadableOrganization(resource.data)
+        );
+      allow create: if signedIn()
+        && validProjectData(request.resource.data)
+        && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds
+        && requestOrganizationIsAllowed();
+      allow update: if signedIn()
+        && validProjectData(request.resource.data)
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.auth.uid in request.resource.data.memberIds
+        && requestOrganizationIsAllowed();
       allow delete: if false;
     }
 
@@ -54,11 +303,40 @@ service cloud.firestore {
         && ownerId == request.auth.uid;
     }
 
+    match /microsoftIntegrations/{userId} {
+      allow read, delete: if isOwnUser(userId);
+      allow create, update: if isOwnUser(userId)
+        && !request.resource.data.keys().hasAny([
+          'accessToken',
+          'refreshToken',
+          'idToken',
+          'clientSecret'
+        ]);
+    }
+
     match /tasks/{taskId} {
       allow read, delete: if isProjectMember(resource.data.projectId);
-      allow create: if isProjectMember(request.resource.data.projectId);
-      allow update: if isProjectMember(resource.data.projectId)
+      allow create: if validTaskData(request.resource.data)
         && isProjectMember(request.resource.data.projectId);
+      allow update: if isProjectMember(resource.data.projectId)
+        && validTaskData(request.resource.data)
+        && isProjectMember(request.resource.data.projectId);
+    }
+
+    match /issues/{issueId} {
+      allow read, delete: if isProjectMember(resource.data.projectId);
+      allow create: if validIssueData(request.resource.data)
+        && isProjectMember(request.resource.data.projectId)
+        && requestOrganizationIsAllowed();
+      allow update: if isProjectMember(resource.data.projectId)
+        && validIssueData(request.resource.data)
+        && isProjectMember(request.resource.data.projectId)
+        && requestOrganizationIsAllowed();
+    }
+
+    match /issueCounters/{projectId} {
+      allow read, create, update: if isProjectMember(projectId);
+      allow delete: if false;
     }
   }
 }

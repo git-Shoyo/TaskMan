@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:taskman/systems/app_user.dart';
+import 'package:taskman/systems/organization.dart';
 import 'package:taskman/systems/project.dart';
 
 enum UserSearchField { email, userId, qrCode }
@@ -208,6 +209,23 @@ class UserRepository {
     final ids = <String>{
       if (project.ownerId.trim().isNotEmpty) project.ownerId.trim(),
       ...project.memberIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+    };
+
+    if (ids.isEmpty) {
+      ids.add(AppUser.localUserId);
+    }
+
+    return fetchUsersByIds(ids.toList());
+  }
+
+  Future<List<AppUser>> fetchOrganizationMembers(
+    Organization organization,
+  ) async {
+    final ids = <String>{
+      if (organization.ownerId.trim().isNotEmpty) organization.ownerId.trim(),
+      ...organization.memberIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty),
     };
 
     if (ids.isEmpty) {

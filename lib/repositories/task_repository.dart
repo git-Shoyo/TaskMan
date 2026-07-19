@@ -128,16 +128,48 @@ class TaskRepository {
 
   Future<void> updateTaskDetails({
     required String taskId,
+    required String title,
+    String? memo,
     DateTime? startDate,
     DateTime? deadline,
+    String? assigneeId,
+    String? assigneeName,
     int? priority,
     required String category,
+    Duration? estimatedTime,
+    DateTime? reminder,
+    List<String> tags = const [],
   }) async {
+    final trimmedTitle = title.trim();
+
+    if (trimmedTitle.isEmpty) {
+      throw ArgumentError.value(
+        title,
+        'title',
+        'Task title must not be empty.',
+      );
+    }
+
     await _taskDoc(taskId).update({
+      'title': trimmedTitle,
+      'memo': memo?.trim().isEmpty ?? true ? null : memo!.trim(),
       'startDate': startDate == null ? null : Timestamp.fromDate(startDate),
       'deadline': deadline == null ? null : Timestamp.fromDate(deadline),
+      'assigneeId': assigneeId?.trim().isEmpty ?? true
+          ? null
+          : assigneeId!.trim(),
+      'assigneeName': assigneeName?.trim().isEmpty ?? true
+          ? null
+          : assigneeName!.trim(),
       'priority': priority,
       'category': category.trim(),
+      'estimatedTimeSeconds': estimatedTime?.inSeconds,
+      'reminder': reminder == null ? null : Timestamp.fromDate(reminder),
+      'tags': tags
+          .map((tag) => tag.trim())
+          .where((tag) => tag.isNotEmpty)
+          .toSet()
+          .toList(),
       'updatedAt': Timestamp.fromDate(DateTime.now()),
     });
   }

@@ -4,12 +4,16 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gantt/flutter_gantt.dart';
 import 'package:intl/intl.dart';
+import 'package:taskman/repositories/issue_repository.dart';
 import 'package:taskman/repositories/project_repository.dart';
 import 'package:taskman/repositories/task_repository.dart';
+import 'package:taskman/repositories/user_repository.dart';
 import 'package:taskman/screens/add_project/add_project_screen.dart';
 import 'package:taskman/screens/add_task/add_task_screen.dart';
 import 'package:taskman/screens/task_detail_screen.dart';
 import 'package:taskman/systems/auth_scope.dart';
+import 'package:taskman/systems/app_user.dart';
+import 'package:taskman/systems/issue.dart';
 import 'package:taskman/systems/project.dart';
 import 'package:taskman/systems/task.dart';
 
@@ -312,6 +316,538 @@ class ProjectGanttScreen extends StatelessWidget {
   }
 }
 
+class EditProjectScreen extends StatefulWidget {
+  const EditProjectScreen({super.key, required this.project});
+
+  final Project project;
+
+  @override
+  State<EditProjectScreen> createState() => _EditProjectScreenState();
+}
+
+class _EditProjectScreenState extends State<EditProjectScreen> {
+  final projectRepository = ProjectRepository();
+  final userRepository = UserRepository();
+  final nameController = TextEditingController();
+  final descriptionController = TextEditingController();
+  final userSearchController = TextEditingController();
+
+  bool isLoadingMembers = true;
+  bool isSearchingUsers = false;
+  bool isSaving = false;
+  UserSearchField userSearchField = UserSearchField.email;
+  List<AppUser> members = [];
+  List<AppUser> userSearchResults = [];
+  String? userSearchMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    nameController.text = widget.project.name;
+    descriptionController.text = widget.project.description ?? '';
+    _loadMembers();
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    descriptionController.dispose();
+    userSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMembers() async {
+    setState(() {
+      isLoadingMembers = true;
+    });
+
+    try {
+      final loadedMembers = await userRepository.fetchProjectMembers(
+        widget.project,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        members = loadedMembers;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('メンバーの読み込みに失敗しました')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoadingMembers = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _searchUsers({
+    String? query,
+    UserSearchField? searchField,
+  }) async {
+    final rawQuery = query ?? userSearchController.text;
+    final field = searchField ?? userSearchField;
+
+    if (rawQuery.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('検索キーワードを入力してください')));
+      return;
+    }
+
+    setState(() {
+      isSearchingUsers = true;
+      userSearchMessage = null;
+      userSearchResults = [];
+    });
+
+    try {
+      final users = await userRepository.searchUsers(
+        query: rawQuery,
+        field: field,
+      );
+      final memberIds = members.map((member) => member.id).toSet();
+      final filteredUsers = users
+          .where(
+            (user) =>
+                user.id != AppUser.localUserId && !memberIds.contains(user.id),
+          )
+          .toList();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        userSearchResults = filteredUsers;
+        if (users.isEmpty) {
+          userSearchMessage = 'ユーザーが見つかりません';
+        } else if (filteredUsers.isEmpty) {
+          userSearchMessage = 'このユーザーは既に追加されています';
+        }
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('ユーザー検索に失敗しました')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSearchingUsers = false;
+        });
+      }
+    }
+  }
+
+  void _addMember(AppUser user) {
+    if (members.any((member) => member.id == user.id)) {
+      return;
+    }
+
+    setState(() {
+      members = [...members, user];
+      userSearchResults.removeWhere((result) => result.id == user.id);
+      userSearchMessage = userSearchResults.isEmpty ? '追加済みです' : null;
+    });
+  }
+
+  void _removeMember(AppUser user) {
+    if (user.id == widget.project.ownerId) {
+      return;
+    }
+
+    setState(() {
+      members.removeWhere((member) => member.id == user.id);
+    });
+  }
+
+  Future<void> _saveProject() async {
+    final name = nameController.text.trim();
+    final description = descriptionController.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('プロジェクト名を入力してください')));
+      return;
+    }
+
+    setState(() {
+      isSaving = true;
+    });
+
+    try {
+      final memberIds = <String>{
+        widget.project.ownerId,
+        ...members.map((member) => member.id),
+      }.where((id) => id.trim().isNotEmpty).toList();
+      final memberRoles = <String, String>{
+        for (final memberId in memberIds)
+          memberId: widget.project.memberRoles[memberId] ?? 'member',
+        widget.project.ownerId: 'owner',
+      };
+      final updatedProject = Project(
+        id: widget.project.id,
+        name: name,
+        description: description.isEmpty ? null : description,
+        ownerId: widget.project.ownerId,
+        organizationId: widget.project.organizationId,
+        memberIds: memberIds,
+        memberRoles: memberRoles,
+        createdAt: widget.project.createdAt,
+        updatedAt: widget.project.updatedAt,
+        startDate: widget.project.startDate,
+        deadline: widget.project.deadline,
+        isArchived: widget.project.isArchived,
+        color: widget.project.color,
+        icon: widget.project.icon,
+      );
+
+      await projectRepository.updateProject(updatedProject);
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context);
+    } on DuplicateProjectNameException {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('同じ名前のプロジェクトが既にあります')));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('プロジェクトの更新に失敗しました')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('プロジェクト編集'),
+        actions: [
+          IconButton(
+            onPressed: isSaving ? null : _saveProject,
+            tooltip: '保存',
+            icon: isSaving
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          children: [
+            TextField(
+              controller: nameController,
+              enabled: !isSaving,
+              maxLength: 50,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'プロジェクト名',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descriptionController,
+              enabled: !isSaving,
+              minLines: 4,
+              maxLines: 8,
+              maxLength: 1000,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: '詳細',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _ProjectMemberEditSection(
+              ownerId: widget.project.ownerId,
+              members: members,
+              searchResults: userSearchResults,
+              searchMessage: userSearchMessage,
+              searchField: userSearchField,
+              searchController: userSearchController,
+              isLoadingMembers: isLoadingMembers,
+              isSearching: isSearchingUsers,
+              isSaving: isSaving,
+              onSearchFieldChanged: (field) {
+                setState(() {
+                  userSearchField = field;
+                  userSearchMessage = null;
+                  userSearchResults = [];
+                });
+              },
+              onSearch: () => _searchUsers(),
+              onAddMember: _addMember,
+              onRemoveMember: _removeMember,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectMemberEditSection extends StatelessWidget {
+  const _ProjectMemberEditSection({
+    required this.ownerId,
+    required this.members,
+    required this.searchResults,
+    required this.searchMessage,
+    required this.searchField,
+    required this.searchController,
+    required this.isLoadingMembers,
+    required this.isSearching,
+    required this.isSaving,
+    required this.onSearchFieldChanged,
+    required this.onSearch,
+    required this.onAddMember,
+    required this.onRemoveMember,
+  });
+
+  final String ownerId;
+  final List<AppUser> members;
+  final List<AppUser> searchResults;
+  final String? searchMessage;
+  final UserSearchField searchField;
+  final TextEditingController searchController;
+  final bool isLoadingMembers;
+  final bool isSearching;
+  final bool isSaving;
+  final ValueChanged<UserSearchField> onSearchFieldChanged;
+  final VoidCallback onSearch;
+  final ValueChanged<AppUser> onAddMember;
+  final ValueChanged<AppUser> onRemoveMember;
+
+  @override
+  Widget build(BuildContext context) {
+    final searchInput = TextField(
+      controller: searchController,
+      enabled: !isSaving && !isSearching,
+      textInputAction: TextInputAction.search,
+      onSubmitted: (_) => onSearch(),
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        labelText: _projectEditSearchFieldLabel(searchField),
+        prefixIcon: Icon(_projectEditSearchFieldIcon(searchField)),
+      ),
+    );
+    final searchButton = FilledButton.icon(
+      onPressed: isSaving || isSearching ? null : onSearch,
+      icon: isSearching
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.search),
+      label: const Text('検索'),
+    );
+
+    return _SectionFrame(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: _ProjectEditSectionTitle(
+                    icon: Icons.group,
+                    title: 'メンバー',
+                  ),
+                ),
+                if (isLoadingMembers)
+                  const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (members.isEmpty && !isLoadingMembers)
+              const _EmptyLine(text: 'メンバーがいません')
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final member in members)
+                    InputChip(
+                      avatar: CircleAvatar(
+                        child: Text(_projectEditUserInitial(member)),
+                      ),
+                      label: Text(
+                        member.id == ownerId
+                            ? '${member.label} / owner'
+                            : member.label,
+                      ),
+                      onDeleted: member.id == ownerId || isSaving
+                          ? null
+                          : () => onRemoveMember(member),
+                    ),
+                ],
+              ),
+            const SizedBox(height: 16),
+            SegmentedButton<UserSearchField>(
+              showSelectedIcon: false,
+              selected: {searchField},
+              segments: const [
+                ButtonSegment(
+                  value: UserSearchField.email,
+                  icon: Icon(Icons.mail_outline),
+                  label: Text('メール'),
+                ),
+                ButtonSegment(
+                  value: UserSearchField.userId,
+                  icon: Icon(Icons.badge_outlined),
+                  label: Text('ユーザーID'),
+                ),
+              ],
+              onSelectionChanged: isSaving || isSearching
+                  ? null
+                  : (values) => onSearchFieldChanged(values.first),
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 560) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: searchInput),
+                      const SizedBox(width: 8),
+                      searchButton,
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchInput,
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: searchButton,
+                    ),
+                  ],
+                );
+              },
+            ),
+            if (searchMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(searchMessage!),
+            ],
+            if (searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final user in searchResults)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    child: Text(_projectEditUserInitial(user)),
+                  ),
+                  title: Text(user.label),
+                  subtitle: user.searchableSubtitle.isEmpty
+                      ? null
+                      : Text(user.searchableSubtitle),
+                  trailing: IconButton(
+                    onPressed: isSaving ? null : () => onAddMember(user),
+                    tooltip: '追加',
+                    icon: const Icon(Icons.person_add_alt_1),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _projectEditSearchFieldLabel(UserSearchField field) {
+  return switch (field) {
+    UserSearchField.email => 'メールアドレス',
+    UserSearchField.userId => 'ユーザーID',
+    UserSearchField.qrCode => 'QRコード',
+  };
+}
+
+IconData _projectEditSearchFieldIcon(UserSearchField field) {
+  return switch (field) {
+    UserSearchField.email => Icons.mail_outline,
+    UserSearchField.userId => Icons.badge_outlined,
+    UserSearchField.qrCode => Icons.qr_code_scanner,
+  };
+}
+
+String _projectEditUserInitial(AppUser user) {
+  final label = user.label.trim();
+
+  if (label.isEmpty) {
+    return '?';
+  }
+
+  return label.characters.first.toUpperCase();
+}
+
+class _ProjectEditSectionTitle extends StatelessWidget {
+  const _ProjectEditSectionTitle({required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class ProjectAnalyticsScreen extends StatelessWidget {
   ProjectAnalyticsScreen({super.key, required this.project});
 
@@ -364,8 +900,10 @@ class _ProjectDetailScaffold extends StatefulWidget {
 class _ProjectDetailScaffoldState extends State<_ProjectDetailScaffold> {
   final taskRepository = TaskRepository();
   final projectRepository = ProjectRepository();
+  final issueRepository = IssueRepository();
 
   bool isDeletingProject = false;
+  bool isMutatingIssue = false;
 
   void _openAddTaskScreen() {
     Navigator.push(
@@ -402,6 +940,213 @@ class _ProjectDetailScaffoldState extends State<_ProjectDetailScaffold> {
             TaskDetailScreen(taskId: task.id, project: widget.project),
       ),
     );
+  }
+
+  void _openEditProjectScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProjectScreen(project: widget.project),
+      ),
+    );
+  }
+
+  Future<void> _openAddIssueDialog() async {
+    final titleController = TextEditingController();
+    final bodyController = TextEditingController();
+    final labelsController = TextEditingController();
+    final externalUrlController = TextEditingController();
+    bool isSaving = false;
+    String? errorText;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              Future<void> saveIssue() async {
+                final title = titleController.text.trim();
+
+                if (title.isEmpty) {
+                  setDialogState(() {
+                    errorText = 'Issue タイトルを入力してください';
+                  });
+                  return;
+                }
+
+                setDialogState(() {
+                  isSaving = true;
+                  errorText = null;
+                });
+
+                final currentUser =
+                    AuthScope.maybeOf(context)?.currentUser ?? AppUser.local();
+                final externalUrl = externalUrlController.text.trim();
+
+                try {
+                  await issueRepository.addIssue(
+                    ProjectIssue(
+                      id: '',
+                      projectId: widget.project.id,
+                      organizationId: widget.project.organizationId,
+                      title: title,
+                      body: bodyController.text.trim().isEmpty
+                          ? null
+                          : bodyController.text.trim(),
+                      labels: _parseIssueLabels(labelsController.text),
+                      authorId: currentUser.id,
+                      authorName: currentUser.label,
+                      externalSource: externalUrl.isEmpty ? null : 'github',
+                      externalUrl: externalUrl.isEmpty ? null : externalUrl,
+                    ),
+                  );
+
+                  if (!mounted || !dialogContext.mounted) {
+                    return;
+                  }
+
+                  Navigator.pop(dialogContext);
+                } catch (_) {
+                  if (!dialogContext.mounted) {
+                    return;
+                  }
+
+                  setDialogState(() {
+                    isSaving = false;
+                    errorText = 'Issue の保存に失敗しました';
+                  });
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Issue を追加'),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (errorText != null) ...[
+                          Text(
+                            errorText!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        TextField(
+                          controller: titleController,
+                          enabled: !isSaving,
+                          autofocus: true,
+                          maxLength: 100,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'Issue タイトル',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: bodyController,
+                          enabled: !isSaving,
+                          minLines: 4,
+                          maxLines: 7,
+                          maxLength: 1200,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: '本文',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: labelsController,
+                          enabled: !isSaving,
+                          maxLength: 120,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'ラベル',
+                            helperText: 'カンマ区切りで入力',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: externalUrlController,
+                          enabled: !isSaving,
+                          keyboardType: TextInputType.url,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'GitHub Issue URL',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => Navigator.pop(dialogContext),
+                    child: const Text('キャンセル'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: isSaving ? null : saveIssue,
+                    icon: isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add),
+                    label: const Text('追加'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      titleController.dispose();
+      bodyController.dispose();
+      labelsController.dispose();
+      externalUrlController.dispose();
+    }
+  }
+
+  Future<void> _setIssueStatus(
+    ProjectIssue issue,
+    ProjectIssueStatus status,
+  ) async {
+    if (isMutatingIssue) {
+      return;
+    }
+
+    setState(() {
+      isMutatingIssue = true;
+    });
+
+    try {
+      await issueRepository.setIssueStatus(issue: issue, status: status);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Issue の更新に失敗しました')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isMutatingIssue = false;
+        });
+      }
+    }
   }
 
   Future<void> _deleteProject() async {
@@ -444,6 +1189,7 @@ class _ProjectDetailScaffoldState extends State<_ProjectDetailScaffold> {
 
     try {
       await taskRepository.deleteTasksByProjectId(widget.project.id);
+      await issueRepository.deleteIssuesByProjectId(widget.project.id);
       await projectRepository.archiveProject(widget.project);
 
       if (!mounted) {
@@ -472,6 +1218,9 @@ class _ProjectDetailScaffoldState extends State<_ProjectDetailScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = AuthScope.of(context).currentUser;
+    final canManageProject = currentUser.id == widget.project.ownerId;
+
     return Scaffold(
       appBar: widget.showAppBar
           ? AppBar(title: Text(widget.project.name))
@@ -496,13 +1245,36 @@ class _ProjectDetailScaffoldState extends State<_ProjectDetailScaffold> {
 
             final tasks = snapshot.data ?? const <Task>[];
 
-            return _ProjectDetailContent(
-              project: widget.project,
-              tasks: tasks,
-              onOpenGantt: _openGanttChart,
-              onOpenAnalytics: _openAnalytics,
-              onDeleteProject: isDeletingProject ? null : _deleteProject,
-              onOpenTask: _openTaskDetail,
+            return StreamBuilder<List<ProjectIssue>>(
+              stream: issueRepository.watchIssues(projectId: widget.project.id),
+              builder: (context, issueSnapshot) {
+                if (issueSnapshot.hasError) {
+                  return const Center(child: Text('Issue の読み込みに失敗しました'));
+                }
+
+                if (issueSnapshot.connectionState == ConnectionState.waiting &&
+                    !issueSnapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                return _ProjectDetailContent(
+                  project: widget.project,
+                  tasks: tasks,
+                  issues: issueSnapshot.data ?? const <ProjectIssue>[],
+                  isMutatingIssue: isMutatingIssue,
+                  onOpenGantt: _openGanttChart,
+                  onOpenAnalytics: _openAnalytics,
+                  onEditProject: canManageProject
+                      ? _openEditProjectScreen
+                      : null,
+                  onDeleteProject: canManageProject && !isDeletingProject
+                      ? _deleteProject
+                      : null,
+                  onOpenTask: _openTaskDetail,
+                  onCreateIssue: _openAddIssueDialog,
+                  onSetIssueStatus: _setIssueStatus,
+                );
+              },
             );
           },
         ),
@@ -515,18 +1287,29 @@ class _ProjectDetailContent extends StatelessWidget {
   const _ProjectDetailContent({
     required this.project,
     required this.tasks,
+    required this.issues,
+    required this.isMutatingIssue,
     required this.onOpenGantt,
     required this.onOpenAnalytics,
+    required this.onEditProject,
     required this.onDeleteProject,
     required this.onOpenTask,
+    required this.onCreateIssue,
+    required this.onSetIssueStatus,
   });
 
   final Project project;
   final List<Task> tasks;
+  final List<ProjectIssue> issues;
+  final bool isMutatingIssue;
   final VoidCallback onOpenGantt;
   final VoidCallback onOpenAnalytics;
+  final VoidCallback? onEditProject;
   final VoidCallback? onDeleteProject;
   final ValueChanged<Task> onOpenTask;
+  final VoidCallback onCreateIssue;
+  final void Function(ProjectIssue issue, ProjectIssueStatus status)
+  onSetIssueStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -545,6 +1328,7 @@ class _ProjectDetailContent extends StatelessWidget {
               project: project,
               onOpenGantt: onOpenGantt,
               onOpenAnalytics: onOpenAnalytics,
+              onEditProject: onEditProject,
               onDeleteProject: onDeleteProject,
             ),
             const SizedBox(height: 16),
@@ -558,6 +1342,13 @@ class _ProjectDetailContent extends StatelessWidget {
               const SizedBox(height: 16),
               Text(project.description!),
             ],
+            const SizedBox(height: 24),
+            _IssueSection(
+              issues: issues,
+              isMutating: isMutatingIssue,
+              onCreateIssue: onCreateIssue,
+              onSetIssueStatus: onSetIssueStatus,
+            ),
             const SizedBox(height: 24),
             Row(
               children: [
@@ -591,12 +1382,14 @@ class _DetailHeader extends StatelessWidget {
     required this.project,
     required this.onOpenGantt,
     required this.onOpenAnalytics,
+    required this.onEditProject,
     required this.onDeleteProject,
   });
 
   final Project project;
   final VoidCallback onOpenGantt;
   final VoidCallback onOpenAnalytics;
+  final VoidCallback? onEditProject;
   final VoidCallback? onDeleteProject;
 
   @override
@@ -639,19 +1432,26 @@ class _DetailHeader extends StatelessWidget {
               icon: const Icon(Icons.analytics_outlined),
               label: const Text('アナリティクス'),
             ),
-            OutlinedButton.icon(
-              onPressed: onDeleteProject,
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('削除'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-                side: BorderSide(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.error.withValues(alpha: 0.64),
+            if (onEditProject != null)
+              OutlinedButton.icon(
+                onPressed: onEditProject,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('編集'),
+              ),
+            if (onDeleteProject != null)
+              OutlinedButton.icon(
+                onPressed: onDeleteProject,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('削除'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                  side: BorderSide(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.error.withValues(alpha: 0.64),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ],
@@ -2332,6 +3132,212 @@ class _EmptyTaskList extends StatelessWidget {
   }
 }
 
+class _IssueSection extends StatelessWidget {
+  const _IssueSection({
+    required this.issues,
+    required this.isMutating,
+    required this.onCreateIssue,
+    required this.onSetIssueStatus,
+  });
+
+  final List<ProjectIssue> issues;
+  final bool isMutating;
+  final VoidCallback onCreateIssue;
+  final void Function(ProjectIssue issue, ProjectIssueStatus status)
+  onSetIssueStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final sortedIssues = [...issues]
+      ..sort((a, b) {
+        if (a.isOpen != b.isOpen) {
+          return a.isOpen ? -1 : 1;
+        }
+
+        return b.updatedAt.compareTo(a.updatedAt);
+      });
+    final openCount = issues.where((issue) => issue.isOpen).length;
+
+    return _SectionFrame(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.adjust, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Issue',
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      Text('$openCount open / ${issues.length}件'),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: onCreateIssue,
+                  icon: const Icon(Icons.add),
+                  label: const Text('追加'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (sortedIssues.isEmpty)
+              const _EmptyLine(text: 'Issue はまだありません')
+            else
+              for (final issue in sortedIssues) ...[
+                _IssueCard(
+                  issue: issue,
+                  isMutating: isMutating,
+                  onSetStatus: (status) => onSetIssueStatus(issue, status),
+                ),
+                if (issue != sortedIssues.last) const SizedBox(height: 8),
+              ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IssueCard extends StatelessWidget {
+  const _IssueCard({
+    required this.issue,
+    required this.isMutating,
+    required this.onSetStatus,
+  });
+
+  final ProjectIssue issue;
+  final bool isMutating;
+  final ValueChanged<ProjectIssueStatus> onSetStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusColor = _issueStatusColor(colorScheme, issue.status);
+    final nextStatus = issue.isOpen
+        ? ProjectIssueStatus.closed
+        : ProjectIssueStatus.open;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(_issueStatusIcon(issue.status), color: statusColor),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      issue.title.isEmpty ? '無題の Issue' : issue.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        _IssueMeta(icon: Icons.tag, text: _issueNumber(issue)),
+                        _IssueMeta(
+                          icon: _issueStatusIcon(issue.status),
+                          text: _issueStatusLabel(issue.status),
+                        ),
+                        _IssueMeta(
+                          icon: Icons.person_outline,
+                          text: issue.authorName,
+                        ),
+                        _IssueMeta(
+                          icon: Icons.update,
+                          text: _dateFormat.format(issue.updatedAt),
+                        ),
+                        if (issue.externalUrl?.trim().isNotEmpty ?? false)
+                          const _IssueMeta(icon: Icons.link, text: 'GitHub'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: isMutating ? null : () => onSetStatus(nextStatus),
+                icon: Icon(_issueActionIcon(issue.status)),
+                label: Text(_issueActionLabel(issue.status)),
+              ),
+            ],
+          ),
+          if (issue.body != null && issue.body!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(issue.body!, maxLines: 3, overflow: TextOverflow.ellipsis),
+          ],
+          if (issue.labels.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final label in issue.labels)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(label),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _IssueMeta extends StatelessWidget {
+  const _IssueMeta({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(text)],
+    );
+  }
+}
+
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(text),
+    );
+  }
+}
+
 class _SectionFrame extends StatelessWidget {
   const _SectionFrame({required this.child});
 
@@ -2712,4 +3718,53 @@ String _formatPriority(int? priority) {
   }
 
   return '重要度 $priority';
+}
+
+List<String> _parseIssueLabels(String rawLabels) {
+  return rawLabels
+      .split(',')
+      .map((label) => label.trim())
+      .where((label) => label.isNotEmpty)
+      .toSet()
+      .toList();
+}
+
+String _issueNumber(ProjectIssue issue) {
+  final number = issue.issueNumber;
+  return number == null ? '#-' : '#$number';
+}
+
+String _issueStatusLabel(ProjectIssueStatus status) {
+  return switch (status) {
+    ProjectIssueStatus.open => 'open',
+    ProjectIssueStatus.closed => 'closed',
+  };
+}
+
+IconData _issueStatusIcon(ProjectIssueStatus status) {
+  return switch (status) {
+    ProjectIssueStatus.open => Icons.adjust,
+    ProjectIssueStatus.closed => Icons.check_circle,
+  };
+}
+
+IconData _issueActionIcon(ProjectIssueStatus status) {
+  return switch (status) {
+    ProjectIssueStatus.open => Icons.check_circle_outline,
+    ProjectIssueStatus.closed => Icons.replay,
+  };
+}
+
+String _issueActionLabel(ProjectIssueStatus status) {
+  return switch (status) {
+    ProjectIssueStatus.open => 'close',
+    ProjectIssueStatus.closed => 'reopen',
+  };
+}
+
+Color _issueStatusColor(ColorScheme colorScheme, ProjectIssueStatus status) {
+  return switch (status) {
+    ProjectIssueStatus.open => colorScheme.primary,
+    ProjectIssueStatus.closed => colorScheme.outline,
+  };
 }
