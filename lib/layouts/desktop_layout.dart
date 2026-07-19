@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../screens/home_screen.dart';
 import '../screens/project_screen.dart';
+import '../screens/task_screen.dart';
 import '../screens/analytics_screen.dart';
 import '../screens/settings_screen.dart';
 
@@ -17,45 +18,55 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   final screens = const [
     HomeScreen(),
     ProjectScreen(),
+    TaskScreen(),
     AnalyticsScreen(),
     SettingsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final selectedScreen = screens[selectedIndex.clamp(0, screens.length - 1)];
+
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
-            selectedIndex: selectedIndex,
-            onDestinationSelected: (index) {
-              setState(() {
-                selectedIndex = index;
-              });
-            },
-            labelType: NavigationRailLabelType.all,
-            destinations: const [
-              // 左メニューラベルの表示
-              NavigationRailDestination(
-                icon: Icon(Icons.home),
-                label: Text('ホーム'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.folder),
-                label: Text('プロジェクト'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.home),
-                label: Text('アナリティクス'),
-              ),
-              NavigationRailDestination(
-                icon: Icon(Icons.settings),
-                label: Text('設定'),
-              ),
-            ],
+          SafeArea(
+            child: NavigationRail(
+              selectedIndex: selectedIndex,
+              extended: true,
+              minExtendedWidth: 180,
+              scrollable: true,
+              onDestinationSelected: (index) {
+                setState(() {
+                  selectedIndex = index;
+                });
+              },
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.home),
+                  label: Text('ホーム'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.folder),
+                  label: Text('プロジェクト'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.task_alt),
+                  label: Text('タスク'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.bar_chart),
+                  label: Text('アナリティクス'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.settings),
+                  label: Text('設定'),
+                ),
+              ],
+            ),
           ),
           const VerticalDivider(width: 1),
-          Expanded(child: screens[selectedIndex]),
+          Expanded(child: selectedScreen),
         ],
       ),
     );

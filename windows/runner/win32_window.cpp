@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
+#include <shellapi.h>
 
 #include "resource.h"
 
@@ -31,6 +32,15 @@ static int g_active_window_count = 0;
 
 using EnableNonClientDpiScaling = BOOL __stdcall(HWND hwnd);
 
+constexpr UINT kTrayIconId = 1;
+constexpr UINT kTrayWindowMessage = WM_APP + 1;
+constexpr UINT kTrayMenuShow = 1001;
+constexpr UINT kTrayMenuMainWindow = 1003;
+constexpr UINT kTrayMenuExit = 1004;
+constexpr int kDebugVisibleWidgetOffset = 80;
+
+const UINT kTaskbarCreatedMessage = RegisterWindowMessage(L"TaskbarCreated");
+
 // Scale helper to convert logical scaler values to physical using passed in
 // scale factor
 int Scale(int source, double scale_factor) {
@@ -51,6 +61,123 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
     enable_non_client_dpi_scaling(hwnd);
   }
   FreeLibrary(user32_module);
+}
+
+void ConfigureDesktopWidgetWindow(HWND window,
+                                  const Win32Window::Size& size,
+                                  double scale_factor) {
+  RECT work_area;
+  if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &work_area, 0)) {
+    return;
+  }
+
+  const int width = Scale(size.width, scale_factor);
+  const int height = Scale(size.height, scale_factor);
+  const int offset = Scale(kDebugVisibleWidgetOffset, scale_factor);
+  const int x = work_area.left + offset;
+  const int y = work_area.top + offset;
+
+  SetWindowPos(window, HWND_NOTOPMOST, x, y, width, height,
+               SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+void AddTrayIcon(HWND window) {
+  NOTIFYICONDATA notify_icon_data{};
+  notify_icon_data.cbSize = sizeof(notify_icon_data);
+  notify_icon_data.hWnd = window;
+  notify_icon_data.uID = kTrayIconId;
+  notify_icon_data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+  notify_icon_data.uCallbackMessage = kTrayWindowMessage;
+  notify_icon_data.hIcon =
+      LoadIcon(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON));
+  wcscpy_s(notify_icon_data.szTip, L"TaskMan resident gantt");
+
+  Shell_NotifyIcon(NIM_DELETE, &notify_icon_data);
+  Shell_NotifyIcon(NIM_ADD, &notify_icon_data);
+}
+
+void RemoveTrayIcon(HWND window) {
+  NOTIFYICONDATA notify_icon_data{};
+  notify_icon_data.cbSize = sizeof(notify_icon_data);
+  notify_icon_data.hWnd = window;
+  notify_icon_data.uID = kTrayIconId;
+
+  Shell_NotifyIcon(NIM_DELETE, &notify_icon_data);
+}
+
+void ShowDesktopWidgetWindow(HWND window) {
+  ShowWindow(window, SW_SHOWNORMAL);
+  SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW |
+                   SWP_NOOWNERZORDER);
+  BringWindowToTop(window);
+  SetForegroundWindow(window);
+  UpdateWindow(window);
+  SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW |
+                   SWP_NOOWNERZORDER);
+}
+
+void ExitDesktopWidget(HWND window) {
+  RemoveTrayIcon(window);
+  DestroyWindow(window);
+}
+
+UINT ShowTrayMenu(HWND window) {
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    return 0;
+  }
+
+  AppendMenu(menu, MF_STRING, kTrayMenuShow, L"Show Gantt");
+  AppendMenu(menu, MF_STRING, kTrayMenuMainWindow, L"Main Window");
+  AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenu(menu, MF_STRING, kTrayMenuExit, L"Exit");
+
+  POINT cursor_position;
+  GetCursorPos(&cursor_position);
+  SetForegroundWindow(window);
+
+  const UINT command =
+      TrackPopupMenu(menu,
+                     TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+                     cursor_position.x, cursor_position.y, 0, window, nullptr);
+  DestroyMenu(menu);
+
+  return command;
+}
+
+NativeGanttPosition NativeGanttPositionFromString(
+    const std::string& position) {
+  if (position == "topRight") {
+    return NativeGanttPosition::TopRight;
+  }
+  if (position == "bottomLeft") {
+    return NativeGanttPosition::BottomLeft;
+  }
+  if (position == "bottomRight") {
+    return NativeGanttPosition::BottomRight;
+  }
+  if (position == "custom") {
+    return NativeGanttPosition::Custom;
+  }
+  return NativeGanttPosition::TopLeft;
+}
+
+std::string NativeGanttPositionToString(NativeGanttPosition position) {
+  switch (position) {
+    case NativeGanttPosition::TopRight:
+      return "topRight";
+    case NativeGanttPosition::BottomLeft:
+      return "bottomLeft";
+    case NativeGanttPosition::BottomRight:
+      return "bottomRight";
+    case NativeGanttPosition::Custom:
+      return "custom";
+    case NativeGanttPosition::TopLeft:
+    default:
+      return "topLeft";
+  }
 }
 
 }  // namespace
@@ -134,8 +261,11 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
-  HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+  const DWORD window_style = WS_OVERLAPPEDWINDOW;
+  const DWORD window_ex_style = 0;
+
+  HWND window = CreateWindowEx(
+      window_ex_style, window_class, title.c_str(), window_style,
       Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
       Scale(size.width, scale_factor), Scale(size.height, scale_factor),
       nullptr, nullptr, GetModuleHandle(nullptr), this);
@@ -145,12 +275,95 @@ bool Win32Window::Create(const std::wstring& title,
   }
 
   UpdateTheme(window);
+  native_gantt_window_.SetOwner(window);
+
+  if (desktop_widget_mode_) {
+    AddTrayIcon(window);
+  }
 
   return OnCreate();
 }
 
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, SW_SHOWNORMAL);
+  const bool did_show = ShowWindow(window_handle_, SW_SHOWNORMAL);
+
+  if (desktop_widget_mode_) {
+    ShowDesktopWidgetWindow(window_handle_);
+  }
+
+  native_gantt_window_.Show();
+
+  return did_show;
+}
+
+void Win32Window::ShowAsDebugDesktopWidget() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+
+  native_gantt_window_.SetPlacementMode(false);
+  native_gantt_window_.Show();
+  ShowWindow(window_handle_, SW_HIDE);
+}
+
+void Win32Window::ShowNativeGanttWindow() {
+  native_gantt_window_.Show();
+}
+
+void Win32Window::HideNativeGanttWindow() {
+  native_gantt_window_.Hide();
+}
+
+void Win32Window::UpdateNativeGanttTasks(
+    const std::vector<NativeGanttTask>& tasks) {
+  native_gantt_window_.UpdateTasks(tasks);
+}
+
+void Win32Window::SetNativeGanttTaskOpenHandler(
+    std::function<void(const std::wstring&)> handler) {
+  native_gantt_window_.SetTaskOpenHandler(handler);
+}
+
+void Win32Window::SetNativeGanttPosition(const std::string& position) {
+  native_gantt_window_.SetPosition(NativeGanttPositionFromString(position));
+}
+
+std::string Win32Window::GetNativeGanttPosition() const {
+  return NativeGanttPositionToString(native_gantt_window_.position());
+}
+
+void Win32Window::SetNativeGanttPlacementMode(bool enabled) {
+  native_gantt_window_.SetPlacementMode(enabled);
+}
+
+void Win32Window::ShowAsMainWindow() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+
+  native_gantt_window_.SetPlacementMode(false);
+
+  RECT work_area;
+  if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &work_area, 0)) {
+    ShowWindow(window_handle_, SW_SHOWNORMAL);
+    native_gantt_window_.Show();
+    return;
+  }
+
+  const int work_width = work_area.right - work_area.left;
+  const int work_height = work_area.bottom - work_area.top;
+  const int width = work_width < 1280 ? work_width : 1280;
+  const int height = work_height < 720 ? work_height : 720;
+  const int x = work_area.left + ((work_width - width) / 2);
+  const int y = work_area.top + ((work_height - height) / 2);
+
+  ShowWindow(window_handle_, SW_SHOWNORMAL);
+  SetWindowPos(window_handle_, HWND_NOTOPMOST, x, y, width, height,
+               SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+  BringWindowToTop(window_handle_);
+  SetForegroundWindow(window_handle_);
+  UpdateWindow(window_handle_);
+  native_gantt_window_.Show();
 }
 
 // static
@@ -178,8 +391,51 @@ Win32Window::MessageHandler(HWND hwnd,
                             UINT const message,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
+  if (desktop_widget_mode_ && message == kTaskbarCreatedMessage) {
+    AddTrayIcon(hwnd);
+    return 0;
+  }
+
   switch (message) {
+    case WM_CLOSE:
+      if (desktop_widget_mode_) {
+        native_gantt_window_.Show();
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+      }
+      break;
+
+    case kTrayWindowMessage:
+      if (desktop_widget_mode_) {
+        if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
+          native_gantt_window_.Show();
+        } else if (lparam == WM_RBUTTONUP) {
+          const UINT command = ShowTrayMenu(hwnd);
+          if (command == kTrayMenuShow) {
+            native_gantt_window_.Show();
+          } else if (command == kTrayMenuMainWindow) {
+            SetDesktopWidgetMode(false);
+            OnMainWindowRequested();
+            ShowAsMainWindow();
+          } else if (command == kTrayMenuExit) {
+            native_gantt_window_.Destroy();
+            ExitDesktopWidget(hwnd);
+          }
+        }
+        return 0;
+      }
+      break;
+
+    case WM_MOUSEACTIVATE:
+      if (desktop_widget_mode_) {
+        return MA_NOACTIVATE;
+      }
+      break;
+
     case WM_DESTROY:
+      if (desktop_widget_mode_) {
+        RemoveTrayIcon(hwnd);
+      }
       window_handle_ = nullptr;
       Destroy();
       if (quit_on_close_) {
@@ -223,8 +479,12 @@ Win32Window::MessageHandler(HWND hwnd,
 
 void Win32Window::Destroy() {
   OnDestroy();
+  native_gantt_window_.Destroy();
 
   if (window_handle_) {
+    if (desktop_widget_mode_) {
+      RemoveTrayIcon(window_handle_);
+    }
     DestroyWindow(window_handle_);
     window_handle_ = nullptr;
   }
@@ -263,12 +523,38 @@ void Win32Window::SetQuitOnClose(bool quit_on_close) {
   quit_on_close_ = quit_on_close;
 }
 
+void Win32Window::SetDesktopWidgetMode(bool desktop_widget_mode) {
+  if (desktop_widget_mode_ == desktop_widget_mode) {
+    return;
+  }
+
+  desktop_widget_mode_ = desktop_widget_mode;
+
+  if (window_handle_ == nullptr) {
+    return;
+  }
+
+  if (desktop_widget_mode_) {
+    AddTrayIcon(window_handle_);
+  } else {
+    RemoveTrayIcon(window_handle_);
+  }
+}
+
+bool Win32Window::IsDesktopWidgetMode() const {
+  return desktop_widget_mode_;
+}
+
 bool Win32Window::OnCreate() {
   // No-op; provided for subclasses.
   return true;
 }
 
 void Win32Window::OnDestroy() {
+  // No-op; provided for subclasses.
+}
+
+void Win32Window::OnMainWindowRequested() {
   // No-op; provided for subclasses.
 }
 

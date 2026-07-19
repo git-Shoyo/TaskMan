@@ -37,14 +37,22 @@ class ProjectRepository {
     ).doc(Uri.encodeComponent(Project.normalizeNameKey(name)));
   }
 
-  Stream<List<Project>> watchProjects() {
-    return _projects.orderBy('createdAt', descending: true).snapshots().map((
-      snapshot,
-    ) {
-      return snapshot.docs
+  Stream<List<Project>> watchProjects({String? memberId}) {
+    Query<Map<String, dynamic>> query = _projects;
+    final normalizedMemberId = memberId?.trim();
+
+    if (normalizedMemberId != null && normalizedMemberId.isNotEmpty) {
+      query = query.where('memberIds', arrayContains: normalizedMemberId);
+    }
+
+    return query.snapshots().map((snapshot) {
+      final projects = snapshot.docs
           .map(Project.fromFirestore)
           .where((project) => !project.isArchived)
           .toList();
+
+      projects.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return projects;
     });
   }
 
@@ -52,6 +60,8 @@ class ProjectRepository {
     required String name,
     String? description,
     String ownerId = 'local-user',
+    List<String> memberIds = const [],
+    Map<String, String> memberRoles = const {},
   }) async {
     final trimmedName = name.trim();
 
@@ -73,11 +83,23 @@ class ProjectRepository {
       name: trimmedName,
     );
     final now = DateTime.now();
+    final normalizedMemberIds = <String>{
+      ownerId,
+      ...memberIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+    }.toList();
+    final normalizedMemberRoles = <String, String>{
+      for (final memberId in normalizedMemberIds)
+        memberId: memberId == ownerId ? 'owner' : 'member',
+      ...memberRoles,
+      ownerId: 'owner',
+    };
     final project = Project(
       id: doc.id,
       name: trimmedName,
       description: description,
       ownerId: ownerId,
+      memberIds: normalizedMemberIds,
+      memberRoles: normalizedMemberRoles,
       createdAt: now,
       updatedAt: now,
     );
@@ -188,25 +210,12 @@ class ProjectRepository {
     required String ownerId,
     String? excludeProjectId,
   }) async {
-    final nameKey = Project.normalizeNameKey(name);
     final nameKeyDoc = await _projectNameKeyDocument(
       ownerId: ownerId,
       name: name,
     ).get();
 
-    if (nameKeyDoc.exists &&
-        nameKeyDoc.data()?['projectId'] != excludeProjectId) {
-      return true;
-    }
-
-    final snapshot = await _projects.where('ownerId', isEqualTo: ownerId).get();
-
-    return snapshot.docs.map(Project.fromFirestore).any((project) {
-      if (project.id == excludeProjectId || project.isArchived) {
-        return false;
-      }
-
-      return Project.normalizeNameKey(project.name) == nameKey;
-    });
+    return nameKeyDoc.exists &&
+        nameKeyDoc.data()?['projectId'] != excludeProjectId;
   }
 }
