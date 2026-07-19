@@ -1,0 +1,64 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnUser(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isProjectMember(projectId) {
+      return signedIn()
+        && projectId is string
+        && exists(/databases/$(database)/documents/projects/$(projectId))
+        && request.auth.uid in get(/databases/$(database)/documents/projects/$(projectId)).data.memberIds;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isOwnUser(userId)
+        && request.resource.data.userId is string
+        && request.resource.data.displayName is string;
+      allow delete: if false;
+    }
+
+    match /userIdKeys/{userIdKey} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /projects/{projectId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.memberIds;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.auth.uid in request.resource.data.memberIds;
+      allow delete: if false;
+    }
+
+    match /projectNameKeys/{ownerId}/names/{nameKey} {
+      allow read, create, update, delete: if signedIn()
+        && ownerId == request.auth.uid;
+    }
+
+    match /tasks/{taskId} {
+      allow read, delete: if isProjectMember(resource.data.projectId);
+      allow create: if isProjectMember(request.resource.data.projectId);
+      allow update: if isProjectMember(resource.data.projectId)
+        && isProjectMember(request.resource.data.projectId);
+    }
+  }
+}

@@ -6,6 +6,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
+
+#include "native_gantt_window.h"
 
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
@@ -52,6 +55,40 @@ class Win32Window {
   // If true, closing this window will quit the application.
   void SetQuitOnClose(bool quit_on_close);
 
+  // If true, this window behaves like a resident desktop widget.
+  void SetDesktopWidgetMode(bool desktop_widget_mode);
+
+  // Returns true when this window is the resident desktop widget.
+  bool IsDesktopWidgetMode() const;
+
+  // Resizes and shows this window as a debug-friendly desktop widget preview.
+  void ShowAsDebugDesktopWidget();
+
+  // Shows the native transparent gantt widget.
+  void ShowNativeGanttWindow();
+
+  // Hides the native transparent gantt widget.
+  void HideNativeGanttWindow();
+
+  // Updates the native gantt widget data.
+  void UpdateNativeGanttTasks(const std::vector<NativeGanttTask>& tasks);
+
+  // Handles requests to open a task from the native gantt widget.
+  void SetNativeGanttTaskOpenHandler(
+      std::function<void(const std::wstring&)> handler);
+
+  // Updates the native gantt widget position.
+  void SetNativeGanttPosition(const std::string& position);
+
+  // Returns the native gantt widget position.
+  std::string GetNativeGanttPosition() const;
+
+  // Enables or disables native gantt widget placement mode.
+  void SetNativeGanttPlacementMode(bool enabled);
+
+  // Resizes and shows this window as the regular main application window.
+  void ShowAsMainWindow();
+
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
@@ -70,6 +107,9 @@ class Win32Window {
 
   // Called when Destroy is called.
   virtual void OnDestroy();
+
+  // Called when the user requests to restore the main app window.
+  virtual void OnMainWindowRequested();
 
  private:
   friend class WindowClassRegistrar;
@@ -91,6 +131,8 @@ class Win32Window {
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
+  bool desktop_widget_mode_ = false;
+  NativeGanttWindow native_gantt_window_;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

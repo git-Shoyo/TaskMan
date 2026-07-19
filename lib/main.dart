@@ -1,20 +1,275 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'layouts/responsive_layout.dart';
+import 'package:flutter/services.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'firebase_options.dart';
+import 'layouts/responsive_layout.dart';
+import 'screens/auth/auth_screen.dart';
+import 'screens/auth/email_verification_screen.dart';
+import 'screens/desktop_gantt_widget_screen.dart';
+import 'screens/task_detail_screen.dart';
+import 'systems/auth_controller.dart';
+import 'systems/auth_scope.dart';
+import 'widgets/native_gantt_bridge.dart';
+
+const desktopWidgetArgument = '--desktop-widget';
+
+Future<void> main(List<String> args) async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final showDesktopWidget = args.contains(desktopWidgetArgument);
+
+  if (showDesktopWidget) {
+    runApp(
+      TaskMan(
+        showDesktopWidget: true,
+        firebaseInitialization: Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        ),
+      ),
+    );
+    return;
+  }
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  runApp(const TaskMan(showDesktopWidget: false));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+@pragma('vm:entry-point')
+Future<void> desktopWidgetMain() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  runApp(
+    TaskMan(
+      showDesktopWidget: true,
+      firebaseInitialization: Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ),
+    ),
+  );
+}
+
+class TaskMan extends StatefulWidget {
+  const TaskMan({
+    super.key,
+    required this.showDesktopWidget,
+    this.firebaseInitialization,
+  });
+
+  final bool showDesktopWidget;
+  final Future<FirebaseApp>? firebaseInitialization;
+
+  @override
+  State<TaskMan> createState() => _TaskManState();
+}
+
+class _TaskManState extends State<TaskMan> {
+  static const _windowChannel = MethodChannel('taskman/window');
+
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  late bool _showDesktopWidget;
+  AuthController? _authController;
+
+  @override
+  void initState() {
+    super.initState();
+    _showDesktopWidget = widget.showDesktopWidget;
+    if (!_showDesktopWidget) {
+      _ensureAuthController();
+    }
+    _windowChannel.setMethodCallHandler(_handleWindowMethodCall);
+  }
+
+  @override
+  void dispose() {
+    _windowChannel.setMethodCallHandler(null);
+    _authController?.dispose();
+    super.dispose();
+  }
+
+  AuthController _ensureAuthController() {
+    return _authController ??= AuthController();
+  }
+
+  Future<void> _handleWindowMethodCall(MethodCall call) async {
+    if (call.method == 'showDesktopWidget') {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _showDesktopWidget = true;
+      });
+    } else if (call.method == 'showMainWindow') {
+      if (!mounted) {
+        return;
+      }
+      _ensureAuthController();
+      setState(() {
+        _showDesktopWidget = false;
+      });
+    } else if (call.method == 'openNativeGanttTask') {
+      final taskId = call.arguments as String?;
+      if (taskId == null || taskId.isEmpty || !mounted) {
+        return;
+      }
+
+      _ensureAuthController();
+      if (_showDesktopWidget) {
+        setState(() {
+          _showDesktopWidget = false;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _openTaskDetailFromNativeGantt(taskId);
+        });
+        return;
+      }
+
+      _openTaskDetailFromNativeGantt(taskId);
+    }
+  }
+
+  void _openTaskDetailFromNativeGantt(String taskId) {
+    if (!mounted) {
+      return;
+    }
+
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (context) => TaskDetailScreen(taskId: taskId)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Task Manager',
+    final home = _showDesktopWidget
+        ? _DesktopWidgetBootstrap(
+            firebaseInitialization: widget.firebaseInitialization,
+          )
+        : _MainWindowAuthGate(
+            authController: _ensureAuthController(),
+            child: const NativeGanttBridge(child: ResponsiveLayout()),
+          );
+    final app = MaterialApp(
+      key: ValueKey(_showDesktopWidget ? 'desktop-widget' : 'main-window'),
+      title: 'TaskMan',
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navigatorKey,
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blue),
-      home: const ResponsiveLayout(),
+      home: home,
+    );
+
+    if (_showDesktopWidget) {
+      return app;
+    }
+
+    return AuthScope(controller: _ensureAuthController(), child: app);
+  }
+}
+
+class _MainWindowAuthGate extends StatelessWidget {
+  const _MainWindowAuthGate({
+    required this.authController,
+    required this.child,
+  });
+
+  final AuthController authController;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: authController,
+      builder: (context, _) {
+        if (!authController.isReady || authController.isLoadingProfile) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (!authController.isSignedIn) {
+          return const AuthScreen();
+        }
+
+        if (authController.needsEmailVerification) {
+          return const EmailVerificationScreen();
+        }
+
+        return child;
+      },
+    );
+  }
+}
+
+class _DesktopWidgetBootstrap extends StatelessWidget {
+  const _DesktopWidgetBootstrap({required this.firebaseInitialization});
+
+  final Future<FirebaseApp>? firebaseInitialization;
+
+  @override
+  Widget build(BuildContext context) {
+    if (firebaseInitialization == null) {
+      return const _DesktopWidgetAuthBootstrap();
+    }
+
+    return FutureBuilder<FirebaseApp>(
+      future: firebaseInitialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(body: Center(child: Text('読み込みに失敗しました')));
+        }
+
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        return const _DesktopWidgetAuthBootstrap();
+      },
+    );
+  }
+}
+
+class _DesktopWidgetAuthBootstrap extends StatefulWidget {
+  const _DesktopWidgetAuthBootstrap();
+
+  @override
+  State<_DesktopWidgetAuthBootstrap> createState() =>
+      _DesktopWidgetAuthBootstrapState();
+}
+
+class _DesktopWidgetAuthBootstrapState
+    extends State<_DesktopWidgetAuthBootstrap> {
+  late final AuthController _authController;
+
+  @override
+  void initState() {
+    super.initState();
+    _authController = AuthController();
+  }
+
+  @override
+  void dispose() {
+    _authController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthScope(
+      controller: _authController,
+      child: AnimatedBuilder(
+        animation: _authController,
+        builder: (context, _) {
+          if (!_authController.isReady || _authController.isLoadingProfile) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          return const DesktopGanttWidgetScreen();
+        },
+      ),
     );
   }
 }
