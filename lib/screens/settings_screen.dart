@@ -298,139 +298,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
-  Future<void> _openProfileDialog(AuthController auth) async {
-    final user = auth.currentUser;
-    final displayNameController = TextEditingController(text: user.displayName);
-    final userIdController = TextEditingController(text: user.userId);
-    var isSaving = false;
-    String? errorText;
-
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              Future<void> save() async {
-                final displayName = displayNameController.text.trim();
-                final userId = userIdController.text.trim();
-                var shouldResetSaving = true;
-
-                if (displayName.isEmpty) {
-                  setDialogState(() {
-                    errorText = '表示名を入力してください';
-                  });
-                  return;
-                }
-
-                setDialogState(() {
-                  isSaving = true;
-                  errorText = null;
-                });
-
-                try {
-                  await auth.updateProfile(
-                    userId: userId,
-                    displayName: displayName,
-                  );
-
-                  if (!dialogContext.mounted) {
-                    return;
-                  }
-
-                  shouldResetSaving = false;
-                  Navigator.pop(dialogContext);
-                } on DuplicateUserIdException {
-                  setDialogState(() {
-                    errorText = 'このユーザーIDは既に使われています';
-                  });
-                } on InvalidUserIdException {
-                  setDialogState(() {
-                    errorText = 'ユーザーIDは3-32文字の英数字・._-で入力してください';
-                  });
-                } catch (_) {
-                  setDialogState(() {
-                    errorText = 'プロフィールを更新できませんでした';
-                  });
-                } finally {
-                  if (shouldResetSaving && dialogContext.mounted) {
-                    setDialogState(() {
-                      isSaving = false;
-                    });
-                  }
-                }
-              }
-
-              return AlertDialog(
-                title: const Text('プロフィール編集'),
-                content: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: displayNameController,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: '表示名',
-                          prefixIcon: Icon(Icons.badge_outlined),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: userIdController,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => isSaving ? null : save(),
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'ユーザーID',
-                          helperText: '3-32文字 / 英数字・._-',
-                          prefixIcon: Icon(Icons.alternate_email),
-                        ),
-                      ),
-                      if (errorText != null) ...[
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            errorText!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: isSaving
-                        ? null
-                        : () => Navigator.pop(dialogContext),
-                    child: const Text('キャンセル'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: isSaving ? null : save,
-                    icon: isSaving
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save),
-                    label: const Text('保存'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      displayNameController.dispose();
-      userIdController.dispose();
-    }
+  Future<void> _openProfileDialog(AuthController auth) {
+    return showDialog<void>(
+      context: context,
+      builder: (_) {
+        return _ProfileEditDialog(auth: auth, initialUser: auth.currentUser);
+      },
+    );
   }
 
   Future<void> _confirmSignOut(AuthController auth) async {
@@ -609,6 +483,184 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _ProfileEditDialog extends StatefulWidget {
+  const _ProfileEditDialog({required this.auth, required this.initialUser});
+
+  final AuthController auth;
+  final AppUser initialUser;
+
+  @override
+  State<_ProfileEditDialog> createState() => _ProfileEditDialogState();
+}
+
+class _ProfileEditDialogState extends State<_ProfileEditDialog> {
+  late final TextEditingController _displayNameController;
+  late final TextEditingController _userIdController;
+
+  bool _isSaving = false;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _displayNameController = TextEditingController(
+      text: widget.initialUser.displayName,
+    );
+    _userIdController = TextEditingController(text: widget.initialUser.userId);
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    _userIdController.dispose();
+    super.dispose();
+  }
+
+  void _cancel() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) {
+      return;
+    }
+
+    final displayName = _displayNameController.text.trim();
+    final userId = _userIdController.text.trim();
+
+    if (displayName.isEmpty) {
+      setState(() {
+        _errorText = '表示名を入力してください';
+      });
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorText = null;
+    });
+
+    var shouldResetSaving = true;
+
+    try {
+      await widget.auth.updateProfile(userId: userId, displayName: displayName);
+
+      if (!mounted) {
+        return;
+      }
+
+      shouldResetSaving = false;
+      FocusManager.instance.primaryFocus?.unfocus();
+      Navigator.of(context).pop();
+    } on DuplicateUserIdException {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _errorText = 'このユーザーIDは既に使われています';
+      });
+    } on InvalidUserIdException {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _errorText = 'ユーザーIDは3-32文字の英数字・._-で入力してください';
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _errorText = 'プロフィールを更新できませんでした';
+      });
+    } finally {
+      if (shouldResetSaving && mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_isSaving,
+      child: AlertDialog(
+        scrollable: true,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        title: const Text('プロフィール編集'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _displayNameController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: '表示名',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _userIdController,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) {
+                  if (!_isSaving) {
+                    _save();
+                  }
+                },
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'ユーザーID',
+                  helperText: '3-32文字 / 英数字・._-',
+                  prefixIcon: Icon(Icons.alternate_email),
+                ),
+              ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _errorText!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isSaving ? null : _cancel,
+            child: const Text('キャンセル'),
+          ),
+          FilledButton.icon(
+            onPressed: _isSaving ? null : _save,
+            icon: _isSaving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save),
+            label: const Text('保存'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -497,13 +497,13 @@ private object TaskManGanttWidgetRenderer {
             dp(2f * layoutScale, density),
             accentPaint,
         )
-        canvas.drawText("7日ガント", content.left + dp(10f * layoutScale, density), baseline, titlePaint)
+        canvas.drawText("予定", content.left + dp(10f * layoutScale, density), baseline, titlePaint)
 
         val rangeEnd = today.plusDays(6)
         val rangeText = "${today.monthValue}/${today.dayOfMonth} - ${rangeEnd.monthValue}/${rangeEnd.dayOfMonth}"
         val syncText = updatedAt?.let { "更新 ${timeFormat.format(Date(it))}" }
         var metaText = listOfNotNull(rangeText, syncText).joinToString("  ")
-        val reservedTitleWidth = titlePaint.measureText("7日ガント") + dp(24f * layoutScale, density)
+        val reservedTitleWidth = titlePaint.measureText("予定") + dp(24f * layoutScale, density)
         if (reservedTitleWidth + metaPaint.measureText(metaText) > content.width()) {
             metaText = rangeText
         }
