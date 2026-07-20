@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local Google OAuth credentials
+/client_secret_*.json
+/google_oauth_credentials.json
+/run_windows_local.ps1
