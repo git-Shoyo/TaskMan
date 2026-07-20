@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$credentialPath = Join-Path $PSScriptRoot "secrets\google_desktop_oauth.json"
+$credentialPath = Join-Path $PSScriptRoot "secrets\client_secret_2_118362286247-omq7evk3pgao7lt93cimrn908442734r.apps.googleusercontent.com.json"
 
 if (-not (Test-Path $credentialPath)) {
     throw "OAuth認証情報が見つかりません: $credentialPath"

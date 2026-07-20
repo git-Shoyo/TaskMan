@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "118362286247-tuatkn81m6411ec40gka20884tudi6o3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.taskman",
+            "certificate_hash": "797c4a3a4ebe5c6b0400b84b7f85a948df85d4ee"
+          }
+        },
+        {
           "client_id": "118362286247-7iponv3jp7v9hk5bb1a2d3a38n70i2ch.apps.googleusercontent.com",
           "client_type": 3
         }

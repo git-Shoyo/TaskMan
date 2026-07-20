@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:taskman/repositories/project_repository.dart';
 import 'package:taskman/repositories/task_repository.dart';
+import 'package:taskman/repositories/user_repository.dart';
 import 'package:taskman/systems/auth_scope.dart';
 import 'package:taskman/systems/project.dart';
 import 'package:taskman/systems/task.dart';
+import 'package:taskman/widgets/task_assignee_labels.dart';
 
 class SevenDayGantt extends StatelessWidget {
   SevenDayGantt({
     super.key,
     TaskRepository? taskRepository,
+    UserRepository? userRepository,
     this.projectIds,
     this.compact = false,
     this.frameless = false,
     this.maxRows = 8,
     this.onOpenTask,
-  }) : taskRepository = taskRepository ?? TaskRepository();
+  }) : taskRepository = taskRepository ?? TaskRepository(),
+       userRepository = userRepository ?? UserRepository();
 
   final TaskRepository taskRepository;
+  final UserRepository userRepository;
   final Iterable<String>? projectIds;
   final bool compact;
   final bool frameless;
@@ -54,27 +59,36 @@ class SevenDayGantt extends StatelessWidget {
           range,
         ).take(maxRows).toList();
 
-        return _GanttShell(
-          compact: compact,
-          frameless: frameless,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _GanttHeader(compact: compact, range: range),
-              const SizedBox(height: 10),
-              if (tasks.isEmpty)
-                const Expanded(child: _GanttMessage(text: '7日以内のタスクはありません'))
-              else
-                Expanded(
-                  child: _GanttRows(
-                    compact: compact,
-                    tasks: tasks,
-                    range: range,
-                    onOpenTask: onOpenTask,
-                  ),
-                ),
-            ],
-          ),
+        return TaskAssigneeLabelsBuilder(
+          tasks: tasks,
+          userRepository: userRepository,
+          builder: (context, assigneeLabels) {
+            return _GanttShell(
+              compact: compact,
+              frameless: frameless,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _GanttHeader(compact: compact, range: range),
+                  const SizedBox(height: 10),
+                  if (tasks.isEmpty)
+                    const Expanded(
+                      child: _GanttMessage(text: '7日以内のタスクはありません'),
+                    )
+                  else
+                    Expanded(
+                      child: _GanttRows(
+                        compact: compact,
+                        tasks: tasks,
+                        assigneeLabels: assigneeLabels,
+                        range: range,
+                        onOpenTask: onOpenTask,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -86,15 +100,18 @@ class UserSevenDayGantt extends StatelessWidget {
     super.key,
     ProjectRepository? projectRepository,
     TaskRepository? taskRepository,
+    UserRepository? userRepository,
     this.compact = false,
     this.frameless = false,
     this.maxRows = 8,
     this.onOpenTask,
   }) : projectRepository = projectRepository ?? ProjectRepository(),
-       taskRepository = taskRepository ?? TaskRepository();
+       taskRepository = taskRepository ?? TaskRepository(),
+       userRepository = userRepository ?? UserRepository();
 
   final ProjectRepository projectRepository;
   final TaskRepository taskRepository;
+  final UserRepository userRepository;
   final bool compact;
   final bool frameless;
   final int maxRows;
@@ -142,6 +159,7 @@ class UserSevenDayGantt extends StatelessWidget {
 
         return SevenDayGantt(
           taskRepository: taskRepository,
+          userRepository: userRepository,
           projectIds: (snapshot.data ?? const <Project>[]).map(
             (project) => project.id,
           ),
@@ -220,12 +238,14 @@ class _GanttRows extends StatelessWidget {
   const _GanttRows({
     required this.compact,
     required this.tasks,
+    required this.assigneeLabels,
     required this.range,
     required this.onOpenTask,
   });
 
   final bool compact;
   final List<Task> tasks;
+  final Map<String, String> assigneeLabels;
   final _GanttRange range;
   final ValueChanged<Task>? onOpenTask;
 
@@ -249,6 +269,7 @@ class _GanttRows extends StatelessWidget {
                 child: _TaskGanttRow(
                   compact: compact,
                   task: tasks[index],
+                  assigneeLabels: assigneeLabels,
                   range: range,
                   onOpenTask: onOpenTask,
                 ),
@@ -300,12 +321,14 @@ class _TaskGanttRow extends StatelessWidget {
   const _TaskGanttRow({
     required this.compact,
     required this.task,
+    required this.assigneeLabels,
     required this.range,
     required this.onOpenTask,
   });
 
   final bool compact;
   final Task task;
+  final Map<String, String> assigneeLabels;
   final _GanttRange range;
   final ValueChanged<Task>? onOpenTask;
 
@@ -349,7 +372,10 @@ class _TaskGanttRow extends StatelessWidget {
                     top: compact ? 5 : 6,
                     width: (width - 4).clamp(8.0, constraints.maxWidth),
                     height: compact ? 20 : 24,
-                    child: _TaskBar(task: task),
+                    child: _TaskBar(
+                      task: task,
+                      assigneeLabels: assigneeLabels,
+                    ),
                   ),
                 ],
               );
@@ -400,14 +426,16 @@ class _GanttGrid extends StatelessWidget {
 }
 
 class _TaskBar extends StatelessWidget {
-  const _TaskBar({required this.task});
+  const _TaskBar({required this.task, required this.assigneeLabels});
 
   final Task task;
+  final Map<String, String> assigneeLabels;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final color = _taskColor(colorScheme, task);
+    final assigneeLabel = taskAssigneeLabel(task, assigneeLabels);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -419,8 +447,8 @@ class _TaskBar extends StatelessWidget {
         child: Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            task.assigneeName?.trim().isNotEmpty ?? false
-                ? task.assigneeName!
+            assigneeLabel.isNotEmpty
+                ? assigneeLabel
                 : '${task.completionPercent}%',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

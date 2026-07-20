@@ -7,6 +7,9 @@ class AuthRepository {
   AuthRepository({FirebaseAuth? firebaseAuth})
     : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
+  static const _androidGoogleServerClientId =
+      '118362286247-7iponv3jp7v9hk5bb1a2d3a38n70i2ch.apps.googleusercontent.com';
+
   final FirebaseAuth _firebaseAuth;
   Future<void>? _googleSignInInitialization;
 
@@ -174,7 +177,11 @@ class AuthRepository {
   }
 
   Future<void> _ensureGoogleSignInInitialized() {
-    return _googleSignInInitialization ??= _googleSignIn.initialize();
+    return _googleSignInInitialization ??= _googleSignIn.initialize(
+      serverClientId: defaultTargetPlatform == TargetPlatform.android
+          ? _androidGoogleServerClientId
+          : null,
+    );
   }
 
   MicrosoftAuthProvider _microsoftPlannerProvider() {

@@ -1,7 +1,8 @@
 name: taskman
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+1
+# 更新時コード側バージョンを操作した後, 末尾'+1'なら'+2'と1を足す操作をする
+version: 0.1.0+2
 
 environment:
   sdk: ^3.12.2

@@ -5,9 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:taskman/repositories/project_repository.dart';
 import 'package:taskman/repositories/task_repository.dart';
+import 'package:taskman/repositories/user_repository.dart';
 import 'package:taskman/systems/auth_scope.dart';
+import 'package:taskman/systems/app_user.dart';
 import 'package:taskman/systems/project.dart';
 import 'package:taskman/systems/task.dart';
+import 'package:taskman/widgets/task_assignee_labels.dart';
 
 class NativeGanttBridge extends StatefulWidget {
   const NativeGanttBridge({
@@ -15,11 +18,13 @@ class NativeGanttBridge extends StatefulWidget {
     required this.child,
     this.projectRepository,
     this.taskRepository,
+    this.userRepository,
   });
 
   final Widget child;
   final ProjectRepository? projectRepository;
   final TaskRepository? taskRepository;
+  final UserRepository? userRepository;
 
   @override
   State<NativeGanttBridge> createState() => _NativeGanttBridgeState();
@@ -30,8 +35,12 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
 
   StreamSubscription<List<Project>>? _projectsSubscription;
   StreamSubscription<List<Task>>? _tasksSubscription;
+  StreamSubscription<List<AppUser>>? _assigneeLabelsSubscription;
   String? _memberId;
   List<String> _projectIds = const [];
+  List<Task> _latestTasks = const [];
+  List<String> _assigneeIds = const [];
+  Map<String, String> _assigneeLabels = const {};
 
   bool get _isSupportedPlatform =>
       !kIsWeb &&
@@ -63,7 +72,8 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.projectRepository != widget.projectRepository ||
-        oldWidget.taskRepository != widget.taskRepository) {
+        oldWidget.taskRepository != widget.taskRepository ||
+        oldWidget.userRepository != widget.userRepository) {
       _memberId = null;
       _projectIds = const [];
       _syncSubscriptions();
@@ -75,6 +85,7 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
     unawaited(_setNativeGanttVisible(false));
     unawaited(_projectsSubscription?.cancel());
     unawaited(_tasksSubscription?.cancel());
+    unawaited(_assigneeLabelsSubscription?.cancel());
     super.dispose();
   }
 
@@ -93,13 +104,18 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
 
     _memberId = nextMemberId;
     _projectIds = const [];
+    _latestTasks = const [];
+    _assigneeIds = const [];
+    _assigneeLabels = const {};
     unawaited(_projectsSubscription?.cancel());
     unawaited(_tasksSubscription?.cancel());
+    unawaited(_assigneeLabelsSubscription?.cancel());
     _projectsSubscription = null;
     _tasksSubscription = null;
+    _assigneeLabelsSubscription = null;
 
     if (nextMemberId == null) {
-      unawaited(_sendTasks(const <Task>[]));
+      _handleTasks(const <Task>[]);
       return;
     }
 
@@ -107,7 +123,7 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
         .watchProjects(memberId: nextMemberId)
         .listen(
           _watchProjectTasks,
-          onError: (_) => unawaited(_sendTasks(const <Task>[])),
+          onError: (_) => _handleTasks(const <Task>[]),
         );
   }
 
@@ -123,15 +139,85 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
     _tasksSubscription = null;
 
     if (nextProjectIds.isEmpty) {
-      unawaited(_sendTasks(const <Task>[]));
+      _handleTasks(const <Task>[]);
       return;
     }
 
     _tasksSubscription = (widget.taskRepository ?? TaskRepository())
         .watchTasks(projectIds: nextProjectIds)
-        .listen((tasks) {
-          unawaited(_sendTasks(tasks));
-        }, onError: (_) => unawaited(_sendTasks(const <Task>[])));
+        .listen(_handleTasks, onError: (_) => _handleTasks(const <Task>[]));
+  }
+
+  void _handleTasks(List<Task> tasks) {
+    _latestTasks = tasks;
+    _syncAssigneeLabels(tasks);
+    unawaited(_sendTasks(tasks));
+  }
+
+  void _syncAssigneeLabels(List<Task> tasks) {
+    final range = _nativeGanttRange();
+    final visibleTasks = _nativeGanttVisibleTasks(tasks, range);
+    final nextAssigneeIds = taskAssigneeIds(visibleTasks);
+    final fallbackLabels = taskAssigneeSnapshotLabels(visibleTasks);
+
+    if (listEquals(_assigneeIds, nextAssigneeIds)) {
+      _assigneeLabels = _mergeCurrentAssigneeLabels(
+        fallbackLabels,
+        nextAssigneeIds,
+      );
+      return;
+    }
+
+    _assigneeIds = nextAssigneeIds;
+    _assigneeLabels = fallbackLabels;
+    unawaited(_assigneeLabelsSubscription?.cancel());
+    _assigneeLabelsSubscription = null;
+
+    if (nextAssigneeIds.isEmpty) {
+      return;
+    }
+
+    _assigneeLabelsSubscription = (widget.userRepository ?? UserRepository())
+        .watchUsersByIds(nextAssigneeIds)
+        .listen(
+          (users) {
+            final latestRange = _nativeGanttRange();
+            final latestVisibleTasks = _nativeGanttVisibleTasks(
+              _latestTasks,
+              latestRange,
+            );
+            _assigneeLabels = taskAssigneeLabelsFromUsers(
+              users,
+              fallbackLabels: taskAssigneeSnapshotLabels(latestVisibleTasks),
+            );
+            unawaited(_sendTasks(_latestTasks));
+          },
+          onError: (_) {
+            final latestRange = _nativeGanttRange();
+            final latestVisibleTasks = _nativeGanttVisibleTasks(
+              _latestTasks,
+              latestRange,
+            );
+            _assigneeLabels = taskAssigneeSnapshotLabels(latestVisibleTasks);
+            unawaited(_sendTasks(_latestTasks));
+          },
+        );
+  }
+
+  Map<String, String> _mergeCurrentAssigneeLabels(
+    Map<String, String> fallbackLabels,
+    List<String> assigneeIds,
+  ) {
+    final labels = Map<String, String>.from(fallbackLabels);
+
+    for (final id in assigneeIds) {
+      final label = _assigneeLabels[id]?.trim();
+      if (label != null && label.isNotEmpty) {
+        labels[id] = label;
+      }
+    }
+
+    return labels;
   }
 
   Future<void> _setNativeGanttVisible(bool visible) async {
@@ -145,7 +231,10 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
   }
 
   Future<void> _sendTasks(List<Task> tasks) async {
-    final payload = _nativeGanttPayload(tasks);
+    final payload = _nativeGanttPayload(
+      tasks,
+      assigneeLabels: _assigneeLabels,
+    );
     try {
       await _windowChannel.invokeMethod<void>(
         'updateNativeGanttTasks',
@@ -165,23 +254,22 @@ class _NativeGanttBridgeState extends State<NativeGanttBridge> {
   }
 }
 
-List<Map<String, Object?>> _nativeGanttPayload(List<Task> tasks) {
-  final today = DateUtils.dateOnly(DateTime.now());
-  final range = _GanttRange(
-    start: today,
-    end: today.add(const Duration(days: 6)),
-  );
+List<Map<String, Object?>> _nativeGanttPayload(
+  List<Task> tasks, {
+  Map<String, String> assigneeLabels = const {},
+}) {
+  final range = _nativeGanttRange();
 
-  return _visibleTasks(tasks, range).take(6).map((task) {
+  return _nativeGanttVisibleTasks(tasks, range).map((task) {
     final taskRange = _taskRange(task)!;
-    final assigneeName = task.assigneeName?.trim() ?? '';
+    final assigneeLabel = taskAssigneeLabel(task, assigneeLabels);
 
     return <String, Object?>{
       'id': task.id,
       'title': task.title.trim().isEmpty ? '無題のタスク' : task.title.trim(),
-      'label': assigneeName.isEmpty
+      'label': assigneeLabel.isEmpty
           ? '${task.completionPercent}%'
-          : assigneeName,
+          : assigneeLabel,
       'startOffset': _dayOffset(range.start, taskRange.start).clamp(0, 6),
       'endOffset': _dayOffset(range.start, taskRange.end).clamp(0, 6),
       'startEpochDay': _epochDay(taskRange.start),
@@ -195,6 +283,18 @@ List<Map<String, Object?>> _nativeGanttPayload(List<Task> tasks) {
       'isOverdue': _isOverdue(task),
     };
   }).toList();
+}
+
+_GanttRange _nativeGanttRange() {
+  final today = DateUtils.dateOnly(DateTime.now());
+  return _GanttRange(
+    start: today,
+    end: today.add(const Duration(days: 6)),
+  );
+}
+
+List<Task> _nativeGanttVisibleTasks(List<Task> tasks, _GanttRange range) {
+  return _visibleTasks(tasks, range).take(6).toList();
 }
 
 class _GanttRange {

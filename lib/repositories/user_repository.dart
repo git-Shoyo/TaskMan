@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:taskman/systems/app_user.dart';
@@ -52,6 +54,64 @@ class UserRepository {
 
       return AppUser.fromFirestore(snapshot);
     });
+  }
+
+  Stream<List<AppUser>> watchUsersByIds(Iterable<String> ids) {
+    final uniqueIds = ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (uniqueIds.isEmpty) {
+      return Stream.value(const <AppUser>[]);
+    }
+
+    final usersById = <String, AppUser>{};
+    final pendingRemoteIds = uniqueIds
+        .where((id) => id != AppUser.localUserId)
+        .toSet();
+    late StreamController<List<AppUser>> controller;
+    final subscriptions =
+        <StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>[];
+
+    void emitUsersIfReady() {
+      if (pendingRemoteIds.isNotEmpty || controller.isClosed) {
+        return;
+      }
+
+      controller.add(
+        uniqueIds.map((id) => usersById[id] ?? AppUser.unknown(id)).toList(),
+      );
+    }
+
+    controller = StreamController<List<AppUser>>(
+      onListen: () {
+        if (uniqueIds.contains(AppUser.localUserId)) {
+          usersById[AppUser.localUserId] = AppUser.local();
+        }
+
+        for (final id in pendingRemoteIds.toList()) {
+          final subscription = _users.doc(id).snapshots().listen((snapshot) {
+            usersById[id] = snapshot.exists
+                ? AppUser.fromFirestore(snapshot)
+                : AppUser.unknown(id);
+            pendingRemoteIds.remove(id);
+            emitUsersIfReady();
+          }, onError: controller.addError);
+          subscriptions.add(subscription);
+        }
+
+        emitUsersIfReady();
+      },
+      onCancel: () async {
+        await Future.wait(
+          subscriptions.map((subscription) => subscription.cancel()),
+        );
+      },
+    );
+
+    return controller.stream;
   }
 
   Future<AppUser> ensureUserProfile(
