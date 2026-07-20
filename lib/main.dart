@@ -215,11 +215,33 @@ class _MainWindowAuthGate extends StatefulWidget {
 }
 
 class _MainWindowAuthGateState extends State<_MainWindowAuthGate> {
-  bool _showAuthScreen = false;
+  AuthScreenMode? _authMode;
 
-  void _openAuthScreen() {
+  void _openAuthScreen(AuthScreenMode mode) {
     setState(() {
-      _showAuthScreen = true;
+      _authMode = mode;
+    });
+  }
+
+  void _closeAuthScreen() {
+    setState(() {
+      _authMode = null;
+    });
+  }
+
+  void _clearAuthModeAfterSignIn() {
+    if (_authMode == null) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.authController.isSignedIn) {
+        return;
+      }
+
+      setState(() {
+        _authMode = null;
+      });
     });
   }
 
@@ -240,15 +262,21 @@ class _MainWindowAuthGateState extends State<_MainWindowAuthGate> {
             duration: const Duration(milliseconds: 300),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeIn,
-            child: _showAuthScreen
-                ? const AuthScreen(key: ValueKey('auth-screen'))
+            child: _authMode != null
+                ? AuthScreen(
+                    key: ValueKey('auth-${_authMode!.name}'),
+                    initialMode: _authMode!,
+                    onBack: _closeAuthScreen,
+                  )
                 : GetStartedScreen(
                     key: const ValueKey('get-started-screen'),
-                    onGetStarted: _openAuthScreen,
-                    onSignIn: _openAuthScreen,
+                    onGetStarted: () => _openAuthScreen(AuthScreenMode.signUp),
+                    onSignIn: () => _openAuthScreen(AuthScreenMode.signIn),
                   ),
           );
         }
+
+        _clearAuthModeAfterSignIn();
 
         if (widget.authController.needsEmailVerification) {
           return const EmailVerificationScreen();

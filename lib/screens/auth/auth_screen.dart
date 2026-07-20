@@ -2,8 +2,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:taskman/systems/auth_scope.dart';
 
+enum AuthScreenMode { signIn, signUp }
+
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({
+    super.key,
+    this.initialMode = AuthScreenMode.signIn,
+    this.onBack,
+  });
+
+  final AuthScreenMode initialMode;
+  final VoidCallback? onBack;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -15,10 +24,16 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _displayNameController = TextEditingController();
 
-  bool _isCreatingAccount = false;
+  late bool _isCreatingAccount;
   bool _isSubmitting = false;
   bool _isResettingPassword = false;
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _isCreatingAccount = widget.initialMode == AuthScreenMode.signUp;
+  }
 
   @override
   void dispose() {
@@ -138,6 +153,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (widget.onBack != null) ...[
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: IconButton(
+                              onPressed: _isSubmitting ? null : widget.onBack,
+                              tooltip: '戻る',
+                              icon: const Icon(Icons.arrow_back_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         Row(
                           children: [
                             CircleAvatar(
