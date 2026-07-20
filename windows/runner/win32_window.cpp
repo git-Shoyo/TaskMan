@@ -39,6 +39,9 @@ constexpr UINT kTrayMenuMainWindow = 1003;
 constexpr UINT kTrayMenuExit = 1004;
 constexpr int kDebugVisibleWidgetOffset = 80;
 
+constexpr int kMinimumWindowWidth = 900;
+constexpr int kMinimumWindowHeight = 600;
+
 const UINT kTaskbarCreatedMessage = RegisterWindowMessage(L"TaskbarCreated");
 
 // Scale helper to convert logical scaler values to physical using passed in
@@ -282,9 +285,7 @@ bool Win32Window::Create(const std::wstring& title,
   UpdateTheme(window);
   native_gantt_window_.SetOwner(window);
 
-  if (desktop_widget_mode_) {
-    AddTrayIcon(window);
-  }
+  AddTrayIcon(window);
 
   return OnCreate();
 }
@@ -421,7 +422,7 @@ Win32Window::MessageHandler(HWND hwnd,
                             UINT const message,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
-  if (desktop_widget_mode_ && message == kTaskbarCreatedMessage) {
+  if (message == kTaskbarCreatedMessage) {
     AddTrayIcon(hwnd);
     return 0;
   }
@@ -437,33 +438,31 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       break;
 
-    case kTrayWindowMessage:
-      if (desktop_widget_mode_) {
-        if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
-          if (native_gantt_enabled_) {
+        case kTrayWindowMessage:
+      if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
+        if (native_gantt_enabled_) {
+          ShowNativeGanttWindow();
+        }
+      } else if (lparam == WM_RBUTTONUP) {
+        const UINT command = ShowTrayMenu(
+            hwnd, native_gantt_enabled_, native_gantt_visible_);
+
+        if (command == kTrayMenuShow) {
+          if (native_gantt_visible_) {
+            HideNativeGanttWindow();
+          } else {
             ShowNativeGanttWindow();
           }
-        } else if (lparam == WM_RBUTTONUP) {
-          const UINT command = ShowTrayMenu(
-              hwnd, native_gantt_enabled_, native_gantt_visible_);
-          if (command == kTrayMenuShow) {
-            if (native_gantt_visible_) {
-              HideNativeGanttWindow();
-            } else {
-              ShowNativeGanttWindow();
-            }
-          } else if (command == kTrayMenuMainWindow) {
-            SetDesktopWidgetMode(false);
-            OnMainWindowRequested();
-            ShowAsMainWindow();
-          } else if (command == kTrayMenuExit) {
-            native_gantt_window_.Destroy();
-            ExitDesktopWidget(hwnd);
-          }
+        } else if (command == kTrayMenuMainWindow) {
+          SetDesktopWidgetMode(false);
+          OnMainWindowRequested();
+          ShowAsMainWindow();
+        } else if (command == kTrayMenuExit) {
+          native_gantt_window_.Destroy();
+          ExitDesktopWidget(hwnd);
         }
-        return 0;
       }
-      break;
+      return 0;
 
     case WM_MOUSEACTIVATE:
       if (desktop_widget_mode_) {
@@ -472,15 +471,31 @@ Win32Window::MessageHandler(HWND hwnd,
       break;
 
     case WM_DESTROY:
-      if (desktop_widget_mode_) {
-        RemoveTrayIcon(hwnd);
-      }
+      RemoveTrayIcon(hwnd);
       window_handle_ = nullptr;
       Destroy();
+
       if (quit_on_close_) {
         PostQuitMessage(0);
       }
       return 0;
+
+        case WM_GETMINMAXINFO: {
+      if (!desktop_widget_mode_) {
+        auto* min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
+
+        const UINT dpi = GetDpiForWindow(hwnd);
+        const double scale_factor = dpi / 96.0;
+
+        min_max_info->ptMinTrackSize.x =
+            Scale(kMinimumWindowWidth, scale_factor);
+        min_max_info->ptMinTrackSize.y =
+            Scale(kMinimumWindowHeight, scale_factor);
+
+        return 0;
+      }
+      break;
+    }
 
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
@@ -520,12 +535,11 @@ void Win32Window::Destroy() {
   native_gantt_window_.Destroy();
 
   if (window_handle_) {
-    if (desktop_widget_mode_) {
-      RemoveTrayIcon(window_handle_);
-    }
+    RemoveTrayIcon(window_handle_);
     DestroyWindow(window_handle_);
     window_handle_ = nullptr;
   }
+
   if (g_active_window_count == 0) {
     WindowClassRegistrar::GetInstance()->UnregisterWindowClass();
   }
@@ -562,21 +576,7 @@ void Win32Window::SetQuitOnClose(bool quit_on_close) {
 }
 
 void Win32Window::SetDesktopWidgetMode(bool desktop_widget_mode) {
-  if (desktop_widget_mode_ == desktop_widget_mode) {
-    return;
-  }
-
   desktop_widget_mode_ = desktop_widget_mode;
-
-  if (window_handle_ == nullptr) {
-    return;
-  }
-
-  if (desktop_widget_mode_) {
-    AddTrayIcon(window_handle_);
-  } else {
-    RemoveTrayIcon(window_handle_);
-  }
 }
 
 bool Win32Window::IsDesktopWidgetMode() const {
