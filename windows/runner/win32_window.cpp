@@ -123,13 +123,18 @@ void ExitDesktopWidget(HWND window) {
   DestroyWindow(window);
 }
 
-UINT ShowTrayMenu(HWND window) {
+UINT ShowTrayMenu(HWND window,
+                  bool gantt_enabled,
+                  bool gantt_visible) {
   HMENU menu = CreatePopupMenu();
   if (menu == nullptr) {
     return 0;
   }
 
-  AppendMenu(menu, MF_STRING, kTrayMenuShow, L"Show Gantt");
+  const UINT gantt_menu_flags =
+      gantt_enabled ? MF_STRING : (MF_STRING | MF_GRAYED);
+  AppendMenu(menu, gantt_menu_flags, kTrayMenuShow,
+             gantt_visible ? L"Hide Gantt" : L"Show Gantt");
   AppendMenu(menu, MF_STRING, kTrayMenuMainWindow, L"Main Window");
   AppendMenu(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenu(menu, MF_STRING, kTrayMenuExit, L"Exit");
@@ -291,7 +296,7 @@ bool Win32Window::Show() {
     ShowDesktopWidgetWindow(window_handle_);
   }
 
-  if (native_gantt_visible_) {
+  if (native_gantt_enabled_ && native_gantt_visible_) {
     native_gantt_window_.Show();
   }
 
@@ -304,15 +309,30 @@ void Win32Window::ShowAsDebugDesktopWidget() {
   }
 
   native_gantt_window_.SetPlacementMode(false);
-  if (native_gantt_visible_) {
+  if (native_gantt_enabled_ && native_gantt_visible_) {
     native_gantt_window_.Show();
   }
   ShowWindow(window_handle_, SW_HIDE);
 }
 
+void Win32Window::SetNativeGanttEnabled(bool enabled) {
+  native_gantt_enabled_ = enabled;
+
+  if (!native_gantt_enabled_) {
+    native_gantt_window_.Hide();
+    return;
+  }
+
+  if (native_gantt_visible_) {
+    native_gantt_window_.Show();
+  }
+}
+
 void Win32Window::ShowNativeGanttWindow() {
   native_gantt_visible_ = true;
-  native_gantt_window_.Show();
+  if (native_gantt_enabled_) {
+    native_gantt_window_.Show();
+  }
 }
 
 void Win32Window::HideNativeGanttWindow() {
@@ -352,7 +372,7 @@ void Win32Window::ShowAsMainWindow() {
   RECT work_area;
   if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &work_area, 0)) {
     ShowWindow(window_handle_, SW_SHOWNORMAL);
-    if (native_gantt_visible_) {
+    if (native_gantt_enabled_ && native_gantt_visible_) {
       native_gantt_window_.Show();
     }
     return;
@@ -371,7 +391,7 @@ void Win32Window::ShowAsMainWindow() {
   BringWindowToTop(window_handle_);
   SetForegroundWindow(window_handle_);
   UpdateWindow(window_handle_);
-  if (native_gantt_visible_) {
+  if (native_gantt_enabled_ && native_gantt_visible_) {
     native_gantt_window_.Show();
   }
 }
@@ -409,7 +429,7 @@ Win32Window::MessageHandler(HWND hwnd,
   switch (message) {
     case WM_CLOSE:
       if (desktop_widget_mode_) {
-        if (native_gantt_visible_) {
+        if (native_gantt_enabled_ && native_gantt_visible_) {
           native_gantt_window_.Show();
         }
         ShowWindow(hwnd, SW_HIDE);
@@ -420,14 +440,17 @@ Win32Window::MessageHandler(HWND hwnd,
     case kTrayWindowMessage:
       if (desktop_widget_mode_) {
         if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
-          if (native_gantt_visible_) {
-            native_gantt_window_.Show();
+          if (native_gantt_enabled_) {
+            ShowNativeGanttWindow();
           }
         } else if (lparam == WM_RBUTTONUP) {
-          const UINT command = ShowTrayMenu(hwnd);
+          const UINT command = ShowTrayMenu(
+              hwnd, native_gantt_enabled_, native_gantt_visible_);
           if (command == kTrayMenuShow) {
             if (native_gantt_visible_) {
-              native_gantt_window_.Show();
+              HideNativeGanttWindow();
+            } else {
+              ShowNativeGanttWindow();
             }
           } else if (command == kTrayMenuMainWindow) {
             SetDesktopWidgetMode(false);
@@ -472,7 +495,6 @@ Win32Window::MessageHandler(HWND hwnd,
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
-        // Size and position the child window.
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
                    rect.bottom - rect.top, TRUE);
       }

@@ -147,12 +147,8 @@ bool FlutterWindow::OnCreate() {
         if (call.method_name() == "setNativeGanttVisible") {
           const auto* arguments = call.arguments();
           if (arguments != nullptr) {
-            if (const auto* visible = std::get_if<bool>(arguments)) {
-              if (*visible) {
-                ShowNativeGanttWindow();
-              } else {
-                HideNativeGanttWindow();
-              }
+            if (const auto* enabled = std::get_if<bool>(arguments)) {
+              SetNativeGanttEnabled(*enabled);
             }
           }
           result->Success();

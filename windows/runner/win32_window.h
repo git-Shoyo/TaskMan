@@ -64,6 +64,9 @@ class Win32Window {
   // Resizes and shows this window as a debug-friendly desktop widget preview.
   void ShowAsDebugDesktopWidget();
 
+  // Enables or disables access to the native gantt after authentication.
+  void SetNativeGanttEnabled(bool enabled);
+
   // Shows the native transparent gantt widget.
   void ShowNativeGanttWindow();
 
@@ -132,7 +135,8 @@ class Win32Window {
 
   bool quit_on_close_ = false;
   bool desktop_widget_mode_ = false;
-  bool native_gantt_visible_ = false;
+  bool native_gantt_enabled_ = false;
+  bool native_gantt_visible_ = true;
   NativeGanttWindow native_gantt_window_;
 
   // window handle for top level window.
