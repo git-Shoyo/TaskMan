@@ -53,8 +53,12 @@ class AuthRepository {
       const desktopClientId = String.fromEnvironment(
         'GOOGLE_DESKTOP_CLIENT_ID',
       );
+      const desktopClientSecret = String.fromEnvironment(
+        'GOOGLE_DESKTOP_CLIENT_SECRET',
+      );
       final credential = await signInWithGoogleDesktop(
         clientId: desktopClientId,
+        clientSecret: desktopClientSecret,
       );
       return _firebaseAuth.signInWithCredential(credential);
     }

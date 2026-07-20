@@ -14,12 +14,20 @@ const _signInTimeout = Duration(minutes: 2);
 
 Future<OAuthCredential> signInWithGoogleDesktop({
   required String clientId,
+  required String clientSecret,
 }) async {
   final normalizedClientId = clientId.trim();
+  final normalizedClientSecret = clientSecret.trim();
   if (normalizedClientId.isEmpty) {
     throw FirebaseAuthException(
       code: 'google-desktop-client-id-missing',
       message: 'GOOGLE_DESKTOP_CLIENT_ID is not configured.',
+    );
+  }
+  if (normalizedClientSecret.isEmpty) {
+    throw FirebaseAuthException(
+      code: 'google-desktop-client-secret-missing',
+      message: 'GOOGLE_DESKTOP_CLIENT_SECRET is not configured.',
     );
   }
 
@@ -118,6 +126,7 @@ Future<OAuthCredential> signInWithGoogleDesktop({
       headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {
         'client_id': normalizedClientId,
+        'client_secret': normalizedClientSecret,
         'code': authorizationCode,
         'code_verifier': codeVerifier,
         'grant_type': 'authorization_code',
