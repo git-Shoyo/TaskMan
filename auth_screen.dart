@@ -26,7 +26,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
   late bool _isCreatingAccount;
   bool _isSubmitting = false;
-  bool _isGoogleSubmitting = false;
   bool _isResettingPassword = false;
   bool _obscurePassword = true;
 
@@ -45,13 +44,14 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _setCreatingAccount(bool value) {
-    if (_isSubmitting || _isGoogleSubmitting || _isCreatingAccount == value) {
+    if (_isSubmitting || _isCreatingAccount == value) {
       return;
     }
 
     setState(() {
       _isCreatingAccount = value;
     });
+
   }
 
   Future<void> _submit() async {
@@ -93,32 +93,6 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         setState(() {
           _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _signInWithGoogle() async {
-    setState(() {
-      _isGoogleSubmitting = true;
-    });
-
-    try {
-      await AuthScope.of(context).signInWithGoogle();
-    } on FirebaseAuthException catch (error) {
-      if (_isGoogleSignInCancellation(error)) {
-        return;
-      }
-
-      debugPrint('Google sign-in failed: ${error.code} / ${error.message}');
-      _showMessage(_authErrorMessage(error), isError: true);
-    } catch (error, stackTrace) {
-      debugPrint('Google sign-in failed: $error\n$stackTrace');
-      _showMessage('Googleログインに失敗しました', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isGoogleSubmitting = false;
         });
       }
     }
@@ -186,12 +160,16 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight - (isWide ? 64 : 40),
+                      minHeight:
+                          constraints.maxHeight - (isWide ? 64 : 40),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _TopBar(onBack: widget.onBack, isBusy: _isSubmitting),
+                        _TopBar(
+                          onBack: widget.onBack,
+                          isBusy: _isSubmitting,
+                        ),
                         SizedBox(height: isWide ? 40 : 28),
                         if (isWide)
                           ExpandedAuthLayout(
@@ -249,7 +227,9 @@ class _AuthScreenState extends State<AuthScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isCreatingAccount ? 'TaskManを始める' : 'おかえりなさい',
+                      _isCreatingAccount
+                          ? 'TaskManを始める'
+                          : 'おかえりなさい',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.8,
@@ -271,18 +251,10 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(height: 24),
               _ModeSelector(
                 isCreatingAccount: _isCreatingAccount,
-                enabled: !_isSubmitting && !_isGoogleSubmitting,
+                enabled: !_isSubmitting,
                 onChanged: _setCreatingAccount,
               ),
-              const SizedBox(height: 20),
-              _GoogleSignInButton(
-                isLoading: _isGoogleSubmitting,
-                enabled: !_isSubmitting && !_isGoogleSubmitting,
-                onPressed: _signInWithGoogle,
-              ),
-              const SizedBox(height: 20),
-              const _AuthDivider(),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               AnimatedSize(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOutCubic,
@@ -297,7 +269,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             decoration: _inputDecoration(
                               context,
                               label: '表示名',
-                              hint: '例：萬 みきお',
+                              hint: '例：紺谷 之衣亜',
                               icon: Icons.badge_outlined,
                             ),
                             validator: (value) {
@@ -385,10 +357,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed:
-                        _isSubmitting ||
-                            _isGoogleSubmitting ||
-                            _isResettingPassword
+                    onPressed: _isSubmitting || _isResettingPassword
                         ? null
                         : _sendPasswordResetEmail,
                     child: _isResettingPassword
@@ -404,9 +373,7 @@ class _AuthScreenState extends State<AuthScreen> {
               SizedBox(
                 height: 54,
                 child: FilledButton(
-                  onPressed: _isSubmitting || _isGoogleSubmitting
-                      ? null
-                      : _submit,
+                  onPressed: _isSubmitting ? null : _submit,
                   style: FilledButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -418,7 +385,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         ? const SizedBox.square(
                             key: ValueKey('loading'),
                             dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           )
                         : Row(
                             key: ValueKey(_isCreatingAccount),
@@ -431,7 +400,9 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                _isCreatingAccount ? 'アカウントを作成' : 'ログイン',
+                                _isCreatingAccount
+                                    ? 'アカウントを作成'
+                                    : 'ログイン',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -487,7 +458,10 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+        borderSide: BorderSide(
+          color: colorScheme.primary,
+          width: 1.6,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(15),
@@ -495,7 +469,10 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(15),
-        borderSide: BorderSide(color: colorScheme.error, width: 1.6),
+        borderSide: BorderSide(
+          color: colorScheme.error,
+          width: 1.6,
+        ),
       ),
     );
   }
@@ -518,17 +495,25 @@ class ExpandedAuthLayout extends StatelessWidget {
       children: [
         Expanded(
           flex: 10,
-          child: _AuthIntroduction(isCreatingAccount: isCreatingAccount),
+          child: _AuthIntroduction(
+            isCreatingAccount: isCreatingAccount,
+          ),
         ),
         const SizedBox(width: 64),
-        Expanded(flex: 9, child: Center(child: form)),
+        Expanded(
+          flex: 9,
+          child: Center(child: form),
+        ),
       ],
     );
   }
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onBack, required this.isBusy});
+  const _TopBar({
+    required this.onBack,
+    required this.isBusy,
+  });
 
   final VoidCallback? onBack;
   final bool isBusy;
@@ -586,7 +571,9 @@ class _TopBar extends StatelessWidget {
 }
 
 class _AuthIntroduction extends StatelessWidget {
-  const _AuthIntroduction({required this.isCreatingAccount});
+  const _AuthIntroduction({
+    required this.isCreatingAccount,
+  });
 
   final bool isCreatingAccount;
 
@@ -609,7 +596,9 @@ class _AuthIntroduction extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
-              isCreatingAccount ? '新しい学習管理を始める' : '続きから取り組む',
+              isCreatingAccount
+                  ? '新しい学習管理を始める'
+                  : '続きから取り組む',
               style: theme.textTheme.labelLarge?.copyWith(
                 color: colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.w700,
@@ -618,7 +607,9 @@ class _AuthIntroduction extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            isCreatingAccount ? '課題も予定も、\nひとつの場所へ。' : '今日やることに、\nすぐ戻れる。',
+            isCreatingAccount
+                ? '課題も予定も、\nひとつの場所へ。'
+                : '今日やることに、\nすぐ戻れる。',
             style: theme.textTheme.displaySmall?.copyWith(
               fontSize: 46,
               height: 1.14,
@@ -632,9 +623,9 @@ class _AuthIntroduction extends StatelessWidget {
             child: Text(
               isCreatingAccount
                   ? 'アカウントを作成すると、Windows・Android・Webの間で'
-                        'タスクやプロジェクトを同期できます。'
+                      'タスクやプロジェクトを同期できます。'
                   : 'ログインすると、保存済みのタスク、プロジェクト、'
-                        '予定を引き続き利用できます。',
+                      '予定を引き続き利用できます。',
               style: theme.textTheme.bodyLarge?.copyWith(
                 height: 1.75,
                 color: colorScheme.onSurfaceVariant,
@@ -646,119 +637,24 @@ class _AuthIntroduction extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _InfoChip(icon: Icons.sync_rounded, label: '複数端末で同期'),
-              _InfoChip(icon: Icons.notifications_none_rounded, label: '期限を通知'),
-              _InfoChip(icon: Icons.timeline_rounded, label: '進捗を見える化'),
+              _InfoChip(
+                icon: Icons.sync_rounded,
+                label: '複数端末で同期',
+              ),
+              _InfoChip(
+                icon: Icons.notifications_none_rounded,
+                label: '期限を通知',
+              ),
+              _InfoChip(
+                icon: Icons.timeline_rounded,
+                label: '進捗を見える化',
+              ),
             ],
           ),
           const SizedBox(height: 34),
           _SecurityNotice(isCreatingAccount: isCreatingAccount),
         ],
       ),
-    );
-  }
-}
-
-class _GoogleSignInButton extends StatelessWidget {
-  const _GoogleSignInButton({
-    required this.isLoading,
-    required this.enabled,
-    required this.onPressed,
-  });
-
-  final bool isLoading;
-  final bool enabled;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return SizedBox(
-      height: 54,
-      child: OutlinedButton(
-        onPressed: enabled ? onPressed : null,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: colorScheme.onSurface,
-          side: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.86),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: isLoading
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _GoogleMark(),
-                  SizedBox(width: 12),
-                  Text(
-                    'Googleで続ける',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-      ),
-    );
-  }
-}
-
-class _GoogleMark extends StatelessWidget {
-  const _GoogleMark();
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      width: 24,
-      height: 24,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        shape: BoxShape.circle,
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: Text(
-        'G',
-        style: TextStyle(
-          color: colorScheme.primary,
-          fontWeight: FontWeight.w900,
-          fontSize: 15,
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthDivider extends StatelessWidget {
-  const _AuthDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Row(
-      children: [
-        Expanded(child: Divider(color: colorScheme.outlineVariant)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            'またはメールアドレスで',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: colorScheme.outlineVariant)),
-      ],
     );
   }
 }
@@ -880,7 +776,10 @@ class _ModeButton extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+  });
 
   final IconData icon;
   final String label;
@@ -917,7 +816,9 @@ class _InfoChip extends StatelessWidget {
 }
 
 class _SecurityNotice extends StatelessWidget {
-  const _SecurityNotice({required this.isCreatingAccount});
+  const _SecurityNotice({
+    required this.isCreatingAccount,
+  });
 
   final bool isCreatingAccount;
 
@@ -936,7 +837,10 @@ class _SecurityNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_outlined, color: colorScheme.onSecondaryContainer),
+          Icon(
+            Icons.shield_outlined,
+            color: colorScheme.onSecondaryContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1046,13 +950,6 @@ class _AuthFooter extends StatelessWidget {
   }
 }
 
-bool _isGoogleSignInCancellation(FirebaseAuthException error) {
-  return error.code == 'google-sign-in-cancelled' ||
-      error.code == 'web-context-cancelled' ||
-      error.code == 'cancelled' ||
-      error.code == 'popup-closed-by-user';
-}
-
 String _authErrorMessage(FirebaseAuthException error) {
   switch (error.code) {
     case 'email-already-in-use':
@@ -1060,7 +957,7 @@ String _authErrorMessage(FirebaseAuthException error) {
     case 'invalid-email':
       return 'メールアドレスの形式を確認してください';
     case 'operation-not-allowed':
-      return 'Firebase Consoleでこの認証方法が有効になっていません';
+      return 'メール/パスワード認証が Firebase Console で有効になっていません';
     case 'invalid-credential':
     case 'user-not-found':
     case 'wrong-password':
@@ -1073,21 +970,6 @@ String _authErrorMessage(FirebaseAuthException error) {
       return 'ネットワーク接続を確認してください';
     case 'too-many-requests':
       return '試行回数が多すぎます。しばらく待ってください';
-    case 'google-sign-in-configuration-error':
-      return 'Googleログインの設定を確認してください。'
-          'AndroidではSHA-1とgoogle-services.jsonが必要です';
-    case 'google-sign-in-unsupported-platform':
-      return 'この環境ではGoogleログインを利用できません';
-    case 'missing-google-id-token':
-      return 'Googleから認証トークンを取得できませんでした';
-    case 'google-sign-in-failed':
-      return 'Googleログインに失敗しました: ${error.message ?? '詳細なし'}';
-    case 'popup-blocked':
-      return 'ブラウザのポップアップがブロックされました';
-    case 'unauthorized-domain':
-      return 'このWebドメインはFirebase Authenticationで許可されていません';
-    case 'account-exists-with-different-credential':
-      return '同じメールアドレスのアカウントが別のログイン方法で登録されています';
     case 'unknown':
       if ((error.message ?? '').toLowerCase().contains('internal error')) {
         return 'Firebase Authentication の設定がまだ有効になっていない可能性があります。'

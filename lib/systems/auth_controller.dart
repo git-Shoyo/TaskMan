@@ -53,6 +53,10 @@ class AuthController extends ChangeNotifier {
     );
   }
 
+  Future<void> signInWithGoogle() {
+    return _authRepository.signInWithGoogle();
+  }
+
   Future<void> createAccount({
     required String email,
     required String password,

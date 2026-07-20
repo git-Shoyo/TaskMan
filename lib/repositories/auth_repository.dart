@@ -1,11 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthRepository {
   AuthRepository({FirebaseAuth? firebaseAuth})
     : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final FirebaseAuth _firebaseAuth;
+  Future<void>? _googleSignInInitialization;
+
+  GoogleSignIn get _googleSignIn => GoogleSignIn.instance;
 
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
 
@@ -39,12 +43,85 @@ class AuthRepository {
     );
   }
 
+  Future<UserCredential> signInWithGoogle() async {
+    final provider = GoogleAuthProvider();
+
+    if (kIsWeb) {
+      return _firebaseAuth.signInWithPopup(provider);
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return _firebaseAuth.signInWithProvider(provider);
+    }
+
+    try {
+      await _ensureGoogleSignInInitialized();
+
+      if (!_googleSignIn.supportsAuthenticate()) {
+        throw FirebaseAuthException(
+          code: 'google-sign-in-unsupported-platform',
+          message: 'Google sign-in is unavailable on this platform.',
+        );
+      }
+
+      final googleUser = await _googleSignIn.authenticate();
+      final idToken = googleUser.authentication.idToken;
+
+      if (idToken == null || idToken.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'missing-google-id-token',
+          message: 'Google Sign-In did not return an ID token.',
+        );
+      }
+
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
+      return _firebaseAuth.signInWithCredential(credential);
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled) {
+        throw FirebaseAuthException(
+          code: 'google-sign-in-cancelled',
+          message: error.description,
+        );
+      }
+
+      if (error.code == GoogleSignInExceptionCode.clientConfigurationError ||
+          error.code == GoogleSignInExceptionCode.providerConfigurationError) {
+        throw FirebaseAuthException(
+          code: 'google-sign-in-configuration-error',
+          message: error.description,
+        );
+      }
+
+      throw FirebaseAuthException(
+        code: 'google-sign-in-failed',
+        message: error.description,
+      );
+    }
+  }
+
   Future<void> sendPasswordResetEmail(String email) {
     return _firebaseAuth.sendPasswordResetEmail(email: email.trim());
   }
 
-  Future<void> signOut() {
-    return _firebaseAuth.signOut();
+  Future<void> signOut() async {
+    final signedInWithGoogle =
+        currentFirebaseUser?.providerData.any(
+          (info) => info.providerId == GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD,
+        ) ??
+        false;
+
+    await _firebaseAuth.signOut();
+
+    if (signedInWithGoogle &&
+        !kIsWeb &&
+        defaultTargetPlatform != TargetPlatform.windows) {
+      try {
+        await _ensureGoogleSignInInitialized();
+        await _googleSignIn.signOut();
+      } on GoogleSignInException {
+        // Firebase is already signed out. Google cleanup is best-effort.
+      }
+    }
   }
 
   Future<UserCredential> linkMicrosoftPlannerAccount() async {
@@ -85,6 +162,10 @@ class AuthRepository {
     }
 
     await user.unlink(MicrosoftAuthProvider.MICROSOFT_SIGN_IN_METHOD);
+  }
+
+  Future<void> _ensureGoogleSignInInitialized() {
+    return _googleSignInInitialization ??= _googleSignIn.initialize();
   }
 
   MicrosoftAuthProvider _microsoftPlannerProvider() {
