@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:taskman/services/google_desktop_sign_in.dart';
 
 class AuthRepository {
   AuthRepository({FirebaseAuth? firebaseAuth})
@@ -44,14 +45,18 @@ class AuthRepository {
   }
 
   Future<UserCredential> signInWithGoogle() async {
-    final provider = GoogleAuthProvider();
-
     if (kIsWeb) {
-      return _firebaseAuth.signInWithPopup(provider);
+      return _firebaseAuth.signInWithPopup(GoogleAuthProvider());
     }
 
     if (defaultTargetPlatform == TargetPlatform.windows) {
-      return _firebaseAuth.signInWithProvider(provider);
+      const desktopClientId = String.fromEnvironment(
+        'GOOGLE_DESKTOP_CLIENT_ID',
+      );
+      final credential = await signInWithGoogleDesktop(
+        clientId: desktopClientId,
+      );
+      return _firebaseAuth.signInWithCredential(credential);
     }
 
     try {

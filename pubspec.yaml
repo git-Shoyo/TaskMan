@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   cloud_firestore: ^6.7.1
+  crypto: ^3.0.7
   firebase_auth: ^6.5.5
   firebase_core: ^4.12.0
   fl_chart: ^1.2.0
